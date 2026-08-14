@@ -1,0 +1,25 @@
+services:
+  vpn-node-api:
+    build:
+      context: ./node
+      dockerfile: Dockerfile
+    container_name: vpn-node-api-dev
+    user: root          # dev only — gives write access to the volume
+    ports:
+      - "8000:8000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - sing-box-data:/opt/sing-box
+    env_file:
+      - .env.local
+    environment:
+      - DEV_MODE=true
+      - API_PORT=8000
+      - API_SECRET=${API_SECRET:?API_SECRET must be set for the local dev node}
+      - CONFIG_PATH=/opt/sing-box/config.json
+      - BACKUP_DIR=/opt/sing-box/backups
+      - SINGBOX_CONTAINER_NAME=sing-box
+
+volumes:
+  sing-box-data:
+    driver: local

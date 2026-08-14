@@ -1,0 +1,529 @@
+#!/bin/bash
+# ============================================================
+#  Feint VPN Node — one-command installer
+#  Usage:
+#    curl -fsSL https://raw.githubusercontent.com/Feint-VPN/node/e1/install.sh | bash -s -- \
+#        --domain vpn.example.com \
+#        --email  admin@example.com
+#
+#  All flags:
+#    --domain   FQDN that points to this server  (required)
+#    --email    Let's Encrypt contact email      (required)
+#    --secret   API secret key                   (default: random 32-char)
+#    --api-port HTTPS API port                   (default: 8337)
+#    --dir      Install directory                (default: /opt/vpn-node)
+#    --sub      Enable subscription endpoint     (default: true)
+#    --branch   Git branch to clone              (default: e1)
+# ============================================================
+set -euo pipefail
+
+# ── colour helpers ────────────────────────────────────────────────────────────
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
+BLUE='\033[0;34m'; CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
+
+info()    { echo -e "${BLUE}ℹ${NC}  $*"; }
+success() { echo -e "${GREEN}✓${NC}  $*"; }
+warn()    { echo -e "${YELLOW}⚠${NC}  $*"; }
+error()   { echo -e "${RED}✗${NC}  $*" >&2; }
+die()     { error "$*"; exit 1; }
+header()  {
+    echo ""
+    echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BOLD}${CYAN}  $*${NC}"
+    echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+}
+
+# ── parse arguments ───────────────────────────────────────────────────────────
+DOMAIN=""
+EMAIL=""
+API_SECRET=""
+API_PORT="8337"
+INSTALL_DIR="/opt/vpn-node"
+SUB_ENABLED="true"
+BRANCH="e1"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --domain)   DOMAIN="$2";      shift 2 ;;
+        --email)    EMAIL="$2";       shift 2 ;;
+        --secret)   API_SECRET="$2";  shift 2 ;;
+        --api-port) API_PORT="$2";    shift 2 ;;
+        --dir)      INSTALL_DIR="$2"; shift 2 ;;
+        --sub)      SUB_ENABLED="$2"; shift 2 ;;
+        --branch)   BRANCH="$2";      shift 2 ;;
+        -h|--help)
+            echo "Usage: $0 --domain <fqdn> --email <email> [options]"
+            echo ""
+            echo "  --domain   FQDN pointing to this server (required)"
+            echo "  --email    Let's Encrypt contact email  (required)"
+            echo "  --secret   API secret key               (auto-generated)"
+            echo "  --api-port HTTPS API port               (default: 8337)"
+            echo "  --dir      Install directory            (default: /opt/vpn-node)"
+            echo "  --sub      Enable subscription endpoint (default: true)"
+            echo "  --branch   Git branch                   (default: e1)"
+            exit 0 ;;
+        *) die "Unknown argument: $1" ;;
+    esac
+done
+
+# ── validate required args ────────────────────────────────────────────────────
+[[ -z "$DOMAIN" ]] && die "--domain is required"
+[[ -z "$EMAIL"  ]] && die "--email is required"
+
+echo "$DOMAIN" | grep -qE '^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)+$' \
+    || die "Invalid domain: $DOMAIN"
+echo "$EMAIL" | grep -qE '^[^@]+@[^@]+\.[^@]+$' \
+    || die "Invalid email: $EMAIL"
+echo "$API_PORT" | grep -qE '^[0-9]{2,5}$' \
+    || die "Invalid port: $API_PORT"
+
+# ── must run as root ──────────────────────────────────────────────────────────
+[[ $EUID -ne 0 ]] && die "Run as root: sudo bash $0 $*"
+
+# ── banner ────────────────────────────────────────────────────────────────────
+clear
+echo -e "${BOLD}${CYAN}"
+cat << 'BANNER'
+  ███████╗███████╗██╗███╗   ██╗████████╗
+  ██╔════╝██╔════╝██║████╗  ██║╚══██╔══╝
+  █████╗  █████╗  ██║██╔██╗ ██║   ██║
+  ██╔══╝  ██╔══╝  ██║██║╚██╗██║   ██║
+  ██║     ███████╗██║██║ ╚████║   ██║
+  ╚═╝     ╚══════╝╚═╝╚═╝  ╚═══╝   ╚═╝
+          VPN Node — one-command installer
+BANNER
+echo -e "${NC}"
+echo -e "  ${BOLD}Domain:${NC}   $DOMAIN"
+echo -e "  ${BOLD}Email:${NC}    $EMAIL"
+echo -e "  ${BOLD}API port:${NC} $API_PORT"
+echo -e "  ${BOLD}Install:${NC}  $INSTALL_DIR"
+echo ""
+
+# ── detect OS ────────────────────────────────────────────────────────────────
+if [[ -f /etc/os-release ]]; then
+    # shellcheck source=/dev/null
+    source /etc/os-release
+    OS_ID="${ID:-unknown}"
+    OS_VER="${VERSION_ID:-0}"
+else
+    OS_ID="unknown"
+fi
+
+info "Detected OS: ${OS_ID} ${OS_VER}"
+
+# ── helpers ───────────────────────────────────────────────────────────────────
+
+# Generate a cryptographically secure random string
+gen_secret() {
+    local len="${1:-32}"
+    local secret
+    set +o pipefail
+    if command -v openssl &>/dev/null; then
+        secret="$(openssl rand -base64 $((len * 3 / 4 + 1)) | tr -dc 'A-Za-z0-9' | head -c "$len")"
+    else
+        secret="$(tr -dc 'A-Za-z0-9' < /dev/urandom | head -c "$len")"
+    fi
+    set -o pipefail
+    printf '%s' "$secret"
+}
+
+# Wait until a URL returns HTTP 200 (or until timeout)
+wait_for_http() {
+    local url="$1" timeout="${2:-60}"
+    info "Waiting for $url ..."
+    local elapsed=0
+    while [[ $elapsed -lt $timeout ]]; do
+        if curl -sk -o /dev/null -w "%{http_code}" "$url" | grep -q "200"; then
+            return 0
+        fi
+        sleep 3; elapsed=$((elapsed + 3))
+    done
+    return 1
+}
+
+# Run a command showing its output as a rolling Docker-style log.
+# Up to 6 gray lines update in-place; when the command finishes the
+# lines are erased (the "free space" effect).
+run_with_log() {
+    local max_lines=6
+    local -a buf=()
+    local drawn=0
+    local width
+    width=$(tput cols 2>/dev/null || echo 80)
+    local gray='\033[90m' nc='\033[0m'
+
+    while IFS= read -r line; do
+        # Truncate to terminal width to prevent wrapping (which breaks cursor math)
+        line="${line:0:$((width - 6))}"
+        buf+=("$line")
+        [[ ${#buf[@]} -gt $max_lines ]] && buf=("${buf[@]:1}")
+        # Move cursor up over previously drawn lines and erase them
+        if [[ $drawn -gt 0 ]]; then
+            printf "\033[%dA\033[J" "$drawn"
+            drawn=0
+        fi
+        for l in "${buf[@]}"; do
+            printf "${gray}  │ %s${nc}\n" "$l"
+            (( drawn++ )) || true
+        done
+    done < <("$@" 2>&1)
+
+    # Erase all remaining lines — the "space freed" effect
+    if [[ $drawn -gt 0 ]]; then
+        printf "\033[%dA\033[J" "$drawn"
+    fi
+}
+
+# ── step 1: install system packages ──────────────────────────────────────────
+header "Step 1 / 6 — System packages"
+
+export DEBIAN_FRONTEND=noninteractive
+
+apt_install() {
+    run_with_log apt-get install -y --no-install-recommends "$@"
+}
+
+info "Updating package index..."
+run_with_log apt-get update
+
+for pkg in curl git ca-certificates gnupg lsb-release openssl iproute2; do
+    if ! dpkg -s "$pkg" &>/dev/null; then
+        info "Installing $pkg..."
+        apt_install "$pkg"
+    fi
+done
+success "System packages ready"
+
+# ── step 2: install docker ────────────────────────────────────────────────────
+header "Step 2 / 6 — Docker"
+
+if command -v docker &>/dev/null && docker compose version &>/dev/null; then
+    success "Docker $(docker --version | cut -d' ' -f3 | tr -d ',') already installed"
+else
+    info "Installing Docker..."
+    run_with_log bash -c "curl -fsSL https://get.docker.com | sh"
+    systemctl enable docker --now >/dev/null 2>&1 || true
+    success "Docker installed"
+fi
+
+# Ensure docker group exists (some images expect GID 987)
+if ! getent group docker &>/dev/null; then
+    groupadd docker
+fi
+DOCKER_GID=$(getent group docker | cut -d: -f3)
+info "Docker GID: ${DOCKER_GID}"
+
+# ── step 3: clone repository ──────────────────────────────────────────────────
+header "Step 3 / 6 — Clone repository"
+
+REPO_URL="https://github.com/Feint-VPN/node.git"
+
+if [[ -d "$INSTALL_DIR/.git" ]]; then
+    warn "Directory $INSTALL_DIR already exists — pulling latest changes"
+    run_with_log git -C "$INSTALL_DIR" fetch origin "$BRANCH" --progress
+    run_with_log git -C "$INSTALL_DIR" reset --hard "origin/$BRANCH"
+else
+    info "Cloning $REPO_URL → $INSTALL_DIR ..."
+    run_with_log git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR" --progress
+fi
+success "Repository ready at $INSTALL_DIR"
+
+# ── step 4: generate configuration ───────────────────────────────────────────
+header "Step 4 / 6 — Generate configuration"
+
+cd "$INSTALL_DIR"
+
+ENV_FILE="$INSTALL_DIR/.env.local"
+source "$INSTALL_DIR/scripts/lib/ports.sh"
+if [[ ! -f "$ENV_FILE" ]]; then
+    [[ -f .env.example ]] && cp .env.example "$ENV_FILE"
+    [[ ! -f "$ENV_FILE" ]] && touch "$ENV_FILE"
+fi
+
+# Generate API secret if not provided
+[[ -z "$API_SECRET" ]] && API_SECRET="$(gen_secret 32)"
+
+# Generate all cryptographic material locally
+#   Reality x25519 key pair — use sing-box container for guaranteed format
+info "Generating x25519 key pair for Reality..."
+KEYGEN_OUT=""
+# Preferred: use sing-box Docker image (same format the server expects)
+if command -v docker &>/dev/null; then
+    KEYGEN_OUT=$(docker run --rm ghcr.io/sagernet/sing-box:latest \
+        generate reality-keypair 2>/dev/null || true)
+fi
+# Fallback: host sing-box binary
+if [[ -z "$KEYGEN_OUT" ]] && command -v sing-box &>/dev/null; then
+    KEYGEN_OUT=$(sing-box generate reality-keypair 2>/dev/null || true)
+fi
+REALITY_PRIVATE=$(echo "$KEYGEN_OUT" | grep PrivateKey | awk '{print $2}' || true)
+REALITY_PUBLIC=$(echo "$KEYGEN_OUT"  | grep PublicKey  | awk '{print $2}' || true)
+
+if [[ -z "${REALITY_PRIVATE:-}" ]]; then
+    # Fallback: openssl X25519 — extract ALL hex lines then base64url-encode
+    REALITY_PRIVATE_HEX=$(openssl genpkey -algorithm X25519 2>/dev/null \
+        | openssl pkey -outform DER 2>/dev/null \
+        | tail -c 32 | xxd -p | tr -d '\n' || true)
+    if [[ -n "$REALITY_PRIVATE_HEX" ]]; then
+        REALITY_PRIVATE=$(python3 -c "
+import base64, binascii
+b = binascii.unhexlify('${REALITY_PRIVATE_HEX}')
+print(base64.urlsafe_b64encode(b).decode().rstrip('='))
+")
+    else
+        # Ultimate fallback: 32 random bytes base64url-encoded
+        REALITY_PRIVATE=$(openssl rand 32 | base64 | tr '+/' '-_' | tr -d '=\n')
+    fi
+    # Derive public key via Python
+    REALITY_PUBLIC=$(python3 -c "
+import base64
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+priv = '${REALITY_PRIVATE}'
+padded = priv + '=' * (-len(priv) % 4)
+key = X25519PrivateKey.from_private_bytes(base64.urlsafe_b64decode(padded))
+pub = key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+print(base64.urlsafe_b64encode(pub).decode().rstrip('='))
+" 2>/dev/null || echo "")
+fi
+
+REALITY_SHORT_ID=$(openssl rand -hex 8)
+
+#   Shadowsocks 2022 PSK (32 bytes for aes-256)
+SS_PASSWORD=$(openssl rand -base64 32 | tr -d '\n')
+SS_METHOD="2022-blake3-aes-256-gcm"
+CLASH_API_SECRET=$(gen_secret 32)
+
+#   Random VPN ports
+info "Checking and selecting ports..."
+port_require_available tcp "$API_PORT" "API_PORT" || die "Choose another --api-port value"
+VLESS_PORT=$(port_find_free_unique tcp 10000 60000 "$API_PORT") || die "Could not find a free VLESS TCP port"
+VMESS_PORT=$(port_find_free_unique tcp 10000 60000 "$API_PORT" "$VLESS_PORT") || die "Could not find a free VMess TCP port"
+TROJAN_PORT=$(port_find_free_unique tcp 10000 60000 "$API_PORT" "$VLESS_PORT" "$VMESS_PORT") || die "Could not find a free Trojan TCP port"
+HY2_PORT=$(port_find_free_unique udp 10000 60000) || die "Could not find a free Hysteria2 UDP port"
+SS_PORT=$(port_find_free_unique tcp 10000 60000 "$API_PORT" "$VLESS_PORT" "$VMESS_PORT" "$TROJAN_PORT") || die "Could not find a free Shadowsocks TCP port"
+
+# Detect public IP
+SERVER_IP=$(curl -4sSf https://api.ipify.org 2>/dev/null \
+         || curl -4sSf https://ifconfig.me 2>/dev/null \
+         || ip route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}' \
+         || echo "0.0.0.0")
+
+info "Detected public IP: $SERVER_IP"
+
+# Write .env.local
+info "Writing $ENV_FILE ..."
+cat > "$ENV_FILE" << EOF
+# Generated by install.sh on $(date -u '+%Y-%m-%d %H:%M UTC')
+
+# API Settings
+API_SECRET=${API_SECRET}
+API_PORT=${API_PORT}
+API_USE_SSL=true
+HIDE_ENDPOINTS=true
+DEV_MODE=false
+
+# Server Settings
+SERVER_DOMAIN=${DOMAIN}
+SERVER_IP=${SERVER_IP}
+
+# SSL/TLS Settings
+TLS_ENABLED=true
+TLS_CERT_PATH=/etc/letsencrypt/live/${DOMAIN}/fullchain.pem
+TLS_KEY_PATH=/etc/letsencrypt/live/${DOMAIN}/privkey.pem
+CERTBOT_EMAIL=${EMAIL}
+CERTBOT_PORT=80
+
+# VPN Protocol Ports
+VLESS_PORT=${VLESS_PORT}
+VMESS_PORT=${VMESS_PORT}
+TROJAN_PORT=${TROJAN_PORT}
+HYSTERIA2_PORT=${HY2_PORT}
+SHADOWSOCKS_PORT=${SS_PORT}
+
+# Reality Settings (VLESS)
+REALITY_PRIVATE_KEY=${REALITY_PRIVATE}
+REALITY_SHORT_ID=${REALITY_SHORT_ID}
+REALITY_SERVER_NAME=www.microsoft.com
+
+# Shadowsocks Settings
+SHADOWSOCKS_PASSWORD=${SS_PASSWORD}
+SHADOWSOCKS_METHOD=${SS_METHOD}
+
+# Hysteria2 Bandwidth
+HYSTERIA2_UP_MBPS=1000
+HYSTERIA2_DOWN_MBPS=1000
+CLASH_API_SECRET=${CLASH_API_SECRET}
+CLASH_API_URL=http://host.docker.internal:9090
+V2RAY_API_ADDRESS=host.docker.internal:10085
+
+# Subscription
+SUBSCRIPTION_ENABLED=${SUB_ENABLED}
+SUB_URI_TEMPLATE=🌌 Feint | {Protocol}
+
+# Logging
+LOG_LEVEL=info
+LOG_FORMAT=json
+
+# Docker
+DOCKER_SOCKET=/var/run/docker.sock
+DOCKER_GID=${DOCKER_GID}
+SINGBOX_CONTAINER_NAME=sing-box
+CERTBOT_CONTAINER_NAME=certbot
+
+# Paths
+CONFIG_PATH=/opt/sing-box/config.json
+BACKUP_DIR=/opt/sing-box/backups
+EOF
+
+success "Configuration written"
+
+# Allow the API container's appuser (uid 1000) to write this file later
+chown 1000:1000 "$ENV_FILE" 2>/dev/null || true
+
+COMPOSE_PROJECT=$(basename "$INSTALL_DIR")
+COMPOSE_CERT_VOL="${COMPOSE_PROJECT}_certbot-certs"
+COMPOSE_CERT_WWW_VOL="${COMPOSE_PROJECT}_certbot-www"
+COMPOSE_SINGBOX_VOL="${COMPOSE_PROJECT}_sing-box-data"
+
+# ── step 5: obtain TLS certificate ───────────────────────────────────────────
+header "Step 5 / 6 — TLS certificate"
+
+# Port 80 must be free for the ACME standalone challenge
+port_require_available tcp 80 "ACME standalone challenge" \
+    || die "Port 80 is occupied. Stop or reconfigure the existing web server, or add a webroot/DNS ACME mode."
+
+info "Issuing certificate for ${DOMAIN} via Let's Encrypt..."
+docker volume create "${COMPOSE_CERT_VOL}" >/dev/null 2>&1 || true
+docker volume create "${COMPOSE_CERT_WWW_VOL}" >/dev/null 2>&1 || true
+docker run --rm \
+    -p 80:80 \
+    -v "${COMPOSE_CERT_VOL}:/etc/letsencrypt" \
+    -v "${COMPOSE_CERT_WWW_VOL}:/var/www/certbot" \
+    certbot/certbot certonly \
+        --standalone \
+        --non-interactive \
+        --agree-tos \
+        --email "$EMAIL" \
+        --domains "$DOMAIN" \
+        --preferred-challenges http \
+        2>&1 | grep -E "(Congratulations|error|Error|Failed|Successfully|Cert)" || true
+
+CERT_PATH="/var/lib/docker/volumes/${COMPOSE_CERT_VOL}/_data/live/${DOMAIN}/fullchain.pem"
+if [[ -f "$CERT_PATH" ]]; then
+    success "Certificate obtained for ${DOMAIN}"
+
+    # The API container runs as appuser uid=1000, so make the issued certs
+    # readable inside the compose volume mounted at /etc/letsencrypt.
+    info "Fixing certificate permissions in ${COMPOSE_CERT_VOL}..."
+    docker run --rm \
+        --entrypoint sh \
+        -v "${COMPOSE_CERT_VOL}:/certs" \
+        certbot/certbot -c "chmod -R a+r /certs \
+            && find /certs -type d -exec chmod a+x {} +" >/dev/null
+    success "Certificates are ready in ${COMPOSE_CERT_VOL}"
+else
+    warn "Certificate not yet available — disabling SSL for initial startup."
+    warn "Make sure your DNS A record for ${DOMAIN} points to ${SERVER_IP}"
+    # Disable SSL in .env.local so uvicorn starts instead of crashing on
+    # a missing cert file.  Re-enable after the cert is issued:
+    #   sed -i 's/^TLS_ENABLED=.*/TLS_ENABLED=true/' .env.local
+    #   sed -i 's/^API_USE_SSL=.*/API_USE_SSL=true/' .env.local
+    #   docker compose restart vpn-node-api
+    env_set "TLS_ENABLED"  "false" "$ENV_FILE"
+    env_set "API_USE_SSL"  "false" "$ENV_FILE"
+fi
+
+# ── step 6: build and start containers ───────────────────────────────────────
+header "Step 6 / 6 — Start containers"
+
+# Compose reads API_PORT and DOCKER_GID from the declarative .env.local file.
+compose() { docker compose --env-file "$ENV_FILE" "$@"; }
+
+info "Pulling the prebuilt sing-box image..."
+compose pull sing-box
+
+info "Building the API image..."
+run_with_log compose build vpn-node-api
+
+# ── generate sing-box config.json directly ────────────────────────────────────
+# The /initialize API endpoint regenerates all secrets and uses hardcoded ports,
+# so we bypass it and write config.json ourselves from the values already saved
+# in .env.local.
+info "Generating sing-box config.json..."
+
+# Build the JSON using a bash heredoc (variable expansion, no Python required)
+cat > /tmp/singbox-install-config.json << SINGBOX_CFG
+{"log":{"level":"info","timestamp":true},"dns":{"servers":[{"type":"udp","tag":"google","server":"8.8.8.8"}],"final":"google","strategy":"ipv4_only","reverse_mapping":true},"inbounds":[{"type":"vless","tag":"vless-reality-in","listen":"::","listen_port":${VLESS_PORT},"users":[],"tls":{"enabled":true,"server_name":"www.microsoft.com","reality":{"enabled":true,"handshake":{"server":"www.microsoft.com","server_port":443},"private_key":"${REALITY_PRIVATE}","short_id":["${REALITY_SHORT_ID}"]}},"multiplex":{"enabled":true,"padding":true}},{"type":"vmess","tag":"vmess-ws-in","listen":"::","listen_port":${VMESS_PORT},"users":[],"transport":{"type":"ws","path":"/vmess-path","max_early_data":2048,"early_data_header_name":"Sec-WebSocket-Protocol"},"tls":{"enabled":true,"certificate_path":"/etc/letsencrypt/live/${DOMAIN}/fullchain.pem","key_path":"/etc/letsencrypt/live/${DOMAIN}/privkey.pem"}},{"type":"trojan","tag":"trojan-in","listen":"::","listen_port":${TROJAN_PORT},"users":[],"tls":{"enabled":true,"certificate_path":"/etc/letsencrypt/live/${DOMAIN}/fullchain.pem","key_path":"/etc/letsencrypt/live/${DOMAIN}/privkey.pem"}},{"type":"hysteria2","tag":"hysteria2-in","listen":"::","listen_port":${HY2_PORT},"up_mbps":1000,"down_mbps":1000,"users":[],"tls":{"enabled":true,"certificate_path":"/etc/letsencrypt/live/${DOMAIN}/fullchain.pem","key_path":"/etc/letsencrypt/live/${DOMAIN}/privkey.pem"}},{"type":"shadowsocks","tag":"shadowsocks-in","listen":"::","listen_port":${SS_PORT},"method":"${SS_METHOD}","password":"${SS_PASSWORD}","users":[]}],"outbounds":[{"type":"direct","tag":"direct"},{"type":"block","tag":"block"}],"route":{"rules":[{"port":[53],"action":"hijack-dns"},{"action":"sniff"},{"action":"resolve","strategy":"ipv4_only"},{"ip_cidr":["::/0"],"outbound":"block"},{"ip_is_private":true,"outbound":"block"}],"final":"direct"},"experimental":{"clash_api":{"external_controller":"0.0.0.0:9090","secret":"${CLASH_API_SECRET}"},"v2ray_api":{"listen":"0.0.0.0:10085","stats":{"enabled":true,"users":[]}},"cache_file":{"enabled":true,"path":"/opt/sing-box/cache.db"}}}
+SINGBOX_CFG
+
+docker volume create "${COMPOSE_SINGBOX_VOL}" >/dev/null 2>&1 || true
+docker run --rm \
+    -v "${COMPOSE_SINGBOX_VOL}:/opt/sing-box" \
+    -v "/tmp:/tmp" \
+    alpine sh -c "mkdir -p /opt/sing-box && cp /tmp/singbox-install-config.json /opt/sing-box/config.json && chown -R 1000:1000 /opt/sing-box"
+
+info "Starting all containers..."
+compose up -d --no-build
+
+info "Waiting for VPN services to start..."
+sleep 6
+
+# ── MTU TCPMSS clamp (fix for providers with reduced path MTU) ────────────────
+info "Applying MTU TCPMSS clamp for NAT forwarding..."
+_NIC=$(ip route get 8.8.8.8 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}' | head -1)
+_NIC="${_NIC:-eth0}"
+iptables -t mangle -C FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1380 2>/dev/null || \
+    iptables -t mangle -A FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1380
+iptables -t mangle -C POSTROUTING -o "$_NIC" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1380 2>/dev/null || \
+    iptables -t mangle -A POSTROUTING -o "$_NIC" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1380
+# Persist across reboots via iptables-persistent
+if ! dpkg -s iptables-persistent >/dev/null 2>&1; then
+    echo iptables-persistent iptables-persistent/autosave_v4 boolean true | debconf-set-selections >/dev/null 2>&1 || true
+    echo iptables-persistent iptables-persistent/autosave_v6 boolean false | debconf-set-selections >/dev/null 2>&1 || true
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -q iptables-persistent >/dev/null 2>&1 || true
+fi
+if dpkg -s iptables-persistent >/dev/null 2>&1; then
+    mkdir -p /etc/iptables
+    iptables-save > /etc/iptables/rules.v4
+    netfilter-persistent save >/dev/null 2>&1 || true
+else
+    warn "Could not install iptables-persistent — MTU clamp will not persist across reboot."
+fi
+
+# ── summary ───────────────────────────────────────────────────────────────────
+header "🎉  Installation complete"
+
+echo -e "  ${BOLD}API URL:${NC}"
+echo -e "    https://${DOMAIN}:${API_PORT}"
+echo ""
+echo -e "  ${BOLD}API credentials:${NC}"
+echo -e "    Stored privately in ${ENV_FILE}"
+echo ""
+echo -e "  ${BOLD}VPN Ports:${NC}"
+echo -e "    VLESS+Reality  → ${VLESS_PORT}/TCP"
+echo -e "    VMess+WS+TLS  → ${VMESS_PORT}/TCP"
+echo -e "    Trojan         → ${TROJAN_PORT}/TCP"
+echo -e "    Hysteria2      → ${HY2_PORT}/UDP"
+echo -e "    Shadowsocks    → ${SS_PORT}/TCP"
+echo ""
+echo -e "  ${BOLD}Next steps:${NC}"
+echo ""
+echo -e "  ${CYAN}# Create a user${NC}"
+echo -e "  curl -sk -X POST https://${DOMAIN}:${API_PORT}/user \\"
+echo -e "    -H 'X-API-Secret: <read it from .env.local>' \\"
+echo -e "    -H 'Content-Type: application/json' \\"
+echo -e "    -d '{\"username\": \"alice\"}'"
+echo ""
+echo -e "  ${CYAN}# Get Hiddify subscription URL${NC}"
+echo -e "  https://${DOMAIN}:${API_PORT}/sub/alice?server_domain=${DOMAIN}"
+echo ""
+echo -e "  ${CYAN}# Check container status${NC}"
+echo -e "  docker compose -f ${INSTALL_DIR}/docker-compose.yml ps"
+echo ""
+echo -e "  ${BOLD}Config file:${NC} ${INSTALL_DIR}/.env.local"
+echo -e "  ${BOLD}Logs:${NC}        docker compose -f ${INSTALL_DIR}/docker-compose.yml logs -f"
+echo ""
+warn "Keep ${ENV_FILE} private: it contains the API credentials."
+echo ""

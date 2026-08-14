@@ -1,0 +1,68 @@
+services:
+  vpn-node-api:
+    build:
+      context: ./node
+      dockerfile: Dockerfile
+    container_name: vpn-node-api
+    ports:
+      - "${API_PORT:-8337}:${API_PORT:-8337}"
+    volumes:
+      - sing-box-data:/opt/sing-box
+      - /var/run/docker.sock:/var/run/docker.sock
+      - certbot-certs:/etc/letsencrypt:ro
+      - ./.env.local:/opt/vpn-node/.env.local
+    env_file:
+      - .env.local
+    environment:
+      - CONFIG_PATH=/opt/sing-box/config.json
+      - BACKUP_DIR=/opt/sing-box/backups
+      - DOCKER_SOCKET=/var/run/docker.sock
+      - SINGBOX_CONTAINER_NAME=sing-box
+      - CLASH_API_URL=${CLASH_API_URL:-http://host.docker.internal:9090}
+      - V2RAY_API_ADDRESS=${V2RAY_API_ADDRESS:-host.docker.internal:10085}
+      - TRAFFIC_STATE_PATH=/opt/sing-box/traffic.json
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    group_add:
+      - "${DOCKER_GID:-987}"
+    restart: unless-stopped
+    depends_on:
+      - sing-box
+    networks:
+      - vpn-network
+
+  sing-box:
+    image: ${SINGBOX_IMAGE:-ghcr.io/sagernet/sing-box:v1.13.12}
+    container_name: sing-box
+    network_mode: host
+    env_file:
+      - .env.local
+    volumes:
+      - sing-box-data:/opt/sing-box
+      - certbot-certs:/etc/letsencrypt:ro
+    command: run -c /opt/sing-box/config.json
+    restart: unless-stopped
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: certbot
+    network_mode: host
+    env_file:
+      - .env.local
+    volumes:
+      - certbot-certs:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
+    entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;"
+    restart: unless-stopped
+
+volumes:
+  sing-box-data:
+    driver: local
+  certbot-certs:
+    driver: local
+  certbot-www:
+    driver: local
+
+networks:
+  vpn-network:
+    driver: bridge
