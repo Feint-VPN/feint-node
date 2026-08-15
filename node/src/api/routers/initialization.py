@@ -2,7 +2,7 @@
 
 from adapters.init_service import InitService
 from api.depends import get_init_service, verify_api_secret
-from api.schemas.initialization import InitRequest, InitResult
+from api.schemas.initialization import InitRequest, InitResult, NodeSecrets
 from fastapi import APIRouter, Depends, status
 from utils.logging_config import get_logger
 
@@ -20,6 +20,8 @@ async def initialize_node(
     return InitResult(**result)
 
 
-@router.post("/secrets", status_code=status.HTTP_200_OK)
-async def generate_secrets(svc: InitService = Depends(get_init_service)) -> dict:
+@router.post("/secrets", response_model=NodeSecrets, status_code=status.HTTP_200_OK)
+async def generate_secrets(
+    svc: InitService = Depends(get_init_service),
+) -> NodeSecrets:
     return await svc.generate_secrets()

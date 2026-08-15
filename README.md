@@ -157,6 +157,8 @@ deployment requirement.
 ## 🔮 API contract
 
 All administrative routes use `X-API-Secret`.
+The node is a server-to-server API and intentionally does not emit browser CORS
+headers.
 
 ### System
 

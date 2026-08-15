@@ -80,11 +80,11 @@ async def test_get_snapshot_returns_formatted_runtime_metadata(monkeypatch):
 
     snapshot = await service.get_snapshot()
 
-    assert snapshot["cpu_load"] == 70
-    assert snapshot["uptime"] == "03d 05h"
-    assert snapshot["configuration"] == "available"
-    assert snapshot["user_count"] == 0
-    assert snapshot["protocols"] == [
+    assert snapshot.cpu_load == 70
+    assert snapshot.uptime == "03d 05h"
+    assert snapshot.configuration_available is True
+    assert snapshot.user_count == 0
+    assert [protocol.model_dump() for protocol in snapshot.protocols] == [
         {"name": "VLESS Reality", "port": 22481, "enabled": True},
         {"name": "VMess WS", "port": 14170, "enabled": True},
         {"name": "Trojan TLS", "port": 22439, "enabled": True},
@@ -116,11 +116,11 @@ async def test_get_snapshot_falls_back_when_metrics_unavailable(monkeypatch):
 
     snapshot = await service.get_snapshot()
 
-    assert snapshot["cpu_load"] == -1
-    assert snapshot["uptime"] == ""
-    assert snapshot["configuration"] == "available"
-    assert snapshot["user_count"] == 0
-    assert snapshot["protocols"] == []
+    assert snapshot.cpu_load == -1
+    assert snapshot.uptime == ""
+    assert snapshot.configuration_available is True
+    assert snapshot.user_count == 0
+    assert snapshot.protocols == []
 
 
 @pytest.mark.asyncio
@@ -152,8 +152,8 @@ async def test_get_snapshot_uses_boot_time_when_proc_uptime_is_unavailable(monke
 
     snapshot = await service.get_snapshot()
 
-    assert snapshot["cpu_load"] == 0
-    assert snapshot["uptime"] == "02d 07h"
+    assert snapshot.cpu_load == 0
+    assert snapshot.uptime == "02d 07h"
 
 
 @pytest.mark.asyncio
@@ -180,12 +180,10 @@ async def test_get_status_reports_unavailable_configuration(monkeypatch):
 
     status = await service.get_status()
 
-    assert status == {
-        "uptime": "00d 01h",
-        "configuration": "unavailable",
-        "user_count": None,
-        "protocols": [],
-    }
+    assert status.uptime == "00d 01h"
+    assert status.configuration_available is False
+    assert status.user_count is None
+    assert status.protocols == []
 
 
 async def _immediate_sleep() -> None:

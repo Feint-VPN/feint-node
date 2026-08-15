@@ -29,6 +29,11 @@ class TestApplicationStartup:
         # If we get here without exceptions, startup was successful
         assert client is not None
 
+    def test_app_uses_public_contract_version(self, client):
+        from main import app
+
+        assert app.version == "2.1"
+
     def test_health_check_endpoint(self, client):
         """Test the health check endpoint."""
         response = client.get("/health")
@@ -52,19 +57,20 @@ class TestApplicationStartup:
             get_node_telemetry_service,
             get_traffic_tracker,
         )
+        from domain.telemetry import NodeProtocolTelemetry, NodeTelemetryStatus
         from main import app
 
         class StubTelemetry:
-            async def get_status(self) -> dict:
-                return {
-                    "uptime": "02d 07h",
-                    "configuration": "available",
-                    "user_count": 250,
-                    "protocols": [
-                        {"name": "VLESS Reality", "port": 22481, "enabled": True},
-                        {"name": "VMess WS", "port": 14170, "enabled": True},
+            async def get_status(self) -> NodeTelemetryStatus:
+                return NodeTelemetryStatus(
+                    uptime="02d 07h",
+                    configuration_available=True,
+                    user_count=250,
+                    protocols=[
+                        NodeProtocolTelemetry(name="VLESS Reality", port=22481),
+                        NodeProtocolTelemetry(name="VMess WS", port=14170),
                     ],
-                }
+                )
 
         class StubRuntime:
             async def is_running(self) -> bool:
@@ -106,16 +112,16 @@ class TestApplicationStartup:
             get_node_telemetry_service,
             get_traffic_tracker,
         )
+        from domain.telemetry import NodeTelemetryStatus
         from main import app
 
         class StubTelemetry:
-            async def get_status(self) -> dict:
-                return {
-                    "uptime": "00d 01h",
-                    "configuration": "available",
-                    "user_count": 3,
-                    "protocols": [],
-                }
+            async def get_status(self) -> NodeTelemetryStatus:
+                return NodeTelemetryStatus(
+                    uptime="00d 01h",
+                    configuration_available=True,
+                    user_count=3,
+                )
 
         class StubRuntime:
             async def is_running(self) -> bool:
@@ -145,8 +151,7 @@ class TestApplicationStartup:
 class TestMiddleware:
     """Tests for application middleware."""
 
-    def test_cors_headers_present(self, client):
-        """Test that CORS middleware adds appropriate headers."""
+    def test_node_does_not_expose_browser_cors(self, client):
         response = client.options(
             "/health",
             headers={
@@ -154,8 +159,7 @@ class TestMiddleware:
                 "Access-Control-Request-Method": "GET",
             },
         )
-        # CORS middleware should add headers
-        assert "access-control-allow-origin" in response.headers
+        assert "access-control-allow-origin" not in response.headers
 
     def test_request_logging_middleware(self, client, caplog):
         """Test that request logging middleware logs requests."""
@@ -200,6 +204,38 @@ class TestRouterRegistration:
         )
         # Should get 422 (not 404), indicating the route exists but header is missing
         assert response.status_code == 422
+
+    def test_generate_secrets_uses_typed_contract(self, client):
+        from api.depends import get_init_service
+        from domain.initialization import NodeSecrets
+        from main import app
+
+        class StubInitService:
+            async def generate_secrets(self) -> NodeSecrets:
+                return NodeSecrets(
+                    api_secret="api-secret",
+                    reality_private_key="private-key",
+                    reality_public_key="public-key",
+                    reality_short_id="short-id",
+                    shadowsocks_password="shadowsocks-password",
+                )
+
+        app.dependency_overrides[get_init_service] = lambda: StubInitService()
+        try:
+            response = client.post(
+                "/secrets", headers={"X-API-Secret": "test-secret-key"}
+            )
+        finally:
+            app.dependency_overrides.pop(get_init_service, None)
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "api_secret": "api-secret",
+            "reality_private_key": "private-key",
+            "reality_public_key": "public-key",
+            "reality_short_id": "short-id",
+            "shadowsocks_password": "shadowsocks-password",
+        }
 
     def test_user_router_with_invalid_auth(self, client):
         """Test that user router requires valid authentication."""
@@ -300,6 +336,39 @@ class TestErrorHandling:
         # Check that error was logged
         log_messages = [record.message for record in caplog.records]
         assert any("Request failed" in msg for msg in log_messages)
+
+    @pytest.mark.parametrize("method", ["create", "delete"])
+    def test_config_rollback_error_has_safe_response(self, client, method):
+        from api.depends import get_user_service
+        from domain.errors import ConfigRollbackError
+        from main import app
+
+        class StubUserService:
+            async def create_user(self, *args, **kwargs):
+                raise ConfigRollbackError("sensitive internal failure")
+
+            async def delete_user(self, *args, **kwargs):
+                raise ConfigRollbackError("sensitive internal failure")
+
+        app.dependency_overrides[get_user_service] = lambda: StubUserService()
+        try:
+            if method == "create":
+                response = client.post(
+                    "/user",
+                    json={"username": "testuser"},
+                    headers={"X-API-Secret": "test-secret-key"},
+                )
+            else:
+                response = client.delete(
+                    "/user/testuser",
+                    headers={"X-API-Secret": "test-secret-key"},
+                )
+        finally:
+            app.dependency_overrides.pop(get_user_service, None)
+
+        assert response.status_code == 500
+        assert response.json() == {"detail": "Node configuration update failed"}
+        assert "sensitive" not in response.text
 
 
 class TestJSONResponses:

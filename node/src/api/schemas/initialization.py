@@ -2,6 +2,7 @@
 
 from datetime import datetime
 
+from domain.initialization import NodeSecrets
 from pydantic import BaseModel, EmailStr, Field
 
 
@@ -18,4 +19,7 @@ class InitResult(BaseModel):
     certificate_obtained: bool
     containers_started: bool
     timestamp: datetime
-    errors: list[str] = []
+    errors: list[str] = Field(default_factory=list)
+
+
+__all__ = ["InitRequest", "InitResult", "NodeSecrets"]

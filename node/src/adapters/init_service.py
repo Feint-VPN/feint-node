@@ -7,6 +7,7 @@ import socket
 from datetime import UTC, datetime
 from pathlib import Path
 
+from domain.initialization import NodeSecrets
 from utils.crypto import (
     generate_reality_keypair,
     generate_reality_short_id,
@@ -79,15 +80,15 @@ class InitService:
             cfg,
         )
 
-    async def generate_secrets(self) -> dict:
+    async def generate_secrets(self) -> NodeSecrets:
         kp = generate_reality_keypair()
-        return {
-            "api_secret": generate_secure_password(32),
-            "reality_private_key": kp.private_key,
-            "reality_public_key": kp.public_key,
-            "reality_short_id": generate_reality_short_id(),
-            "shadowsocks_password": generate_secure_password(32),
-        }
+        return NodeSecrets(
+            api_secret=generate_secure_password(32),
+            reality_private_key=kp.private_key,
+            reality_public_key=kp.public_key,
+            reality_short_id=generate_reality_short_id(),
+            shadowsocks_password=generate_secure_password(32),
+        )
 
     async def validate_domain(self, domain: str, server_ip: str) -> bool:
         return await self._validate_dns(domain, server_ip)

@@ -8,6 +8,11 @@ import time
 
 from domain.models import Inbound, SingBoxConfig
 from domain.ports import IConfigStore
+from domain.telemetry import (
+    NodeProtocolTelemetry,
+    NodeTelemetrySnapshot,
+    NodeTelemetryStatus,
+)
 
 _PROTOCOL_LABELS = {
     "vless": "VLESS",
@@ -30,29 +35,28 @@ class NodeTelemetryService:
     def __init__(self, store: IConfigStore) -> None:
         self._store = store
 
-    async def get_snapshot(self) -> dict:
-        return {
-            "cpu_load": await self._cpu_load_percent(),
-            **await self.get_status(),
-        }
+    async def get_snapshot(self) -> NodeTelemetrySnapshot:
+        status = await self.get_status()
+        return NodeTelemetrySnapshot(
+            cpu_load=await self._cpu_load_percent(),
+            **status.model_dump(),
+        )
 
-    async def get_status(self) -> dict:
+    async def get_status(self) -> NodeTelemetryStatus:
         """Return runtime metadata without the slower CPU sampling delay."""
 
         try:
             config = await self._store.load()
         except Exception:
-            return {
-                "uptime": self._format_uptime(self._read_uptime_seconds()),
-                "configuration": "unavailable",
-                "user_count": None,
-                "protocols": [],
-            }
+            return NodeTelemetryStatus(
+                uptime=self._format_uptime(self._read_uptime_seconds()),
+                configuration_available=False,
+            )
 
-        return {
-            "uptime": self._format_uptime(self._read_uptime_seconds()),
-            "configuration": "available",
-            "user_count": len(
+        return NodeTelemetryStatus(
+            uptime=self._format_uptime(self._read_uptime_seconds()),
+            configuration_available=True,
+            user_count=len(
                 {
                     user.name
                     for inbound in config.inbounds
@@ -60,19 +64,19 @@ class NodeTelemetryService:
                     if user.name
                 }
             ),
-            "protocols": self._protocols(config),
-        }
+            protocols=self._protocols(config),
+        )
 
     @classmethod
-    def _protocols(cls, config: SingBoxConfig) -> list[dict]:
-        protocols: list[dict] = []
+    def _protocols(cls, config: SingBoxConfig) -> list[NodeProtocolTelemetry]:
+        protocols: list[NodeProtocolTelemetry] = []
         seen: set[tuple[str, int]] = set()
         for inbound in config.inbounds:
             protocol = cls._protocol_from_inbound(inbound)
             if protocol is None:
                 continue
 
-            key = (protocol["name"], protocol["port"])
+            key = (protocol.name, protocol.port)
             if key in seen:
                 continue
 
@@ -175,7 +179,7 @@ class NodeTelemetryService:
         return None
 
     @staticmethod
-    def _protocol_from_inbound(inbound: Inbound) -> dict | None:
+    def _protocol_from_inbound(inbound: Inbound) -> NodeProtocolTelemetry | None:
         protocol_type = inbound.type.strip().lower()
         if protocol_type not in _SUPPORTED_INBOUND_TYPES:
             return None
@@ -192,11 +196,7 @@ class NodeTelemetryService:
         elif protocol_type == "trojan" and inbound.tls and inbound.tls.enabled:
             name = f"{name} TLS"
 
-        return {
-            "name": name,
-            "port": inbound.listen_port,
-            "enabled": True,
-        }
+        return NodeProtocolTelemetry(name=name, port=inbound.listen_port)
 
     @staticmethod
     def _format_uptime(total_seconds: int | None) -> str:

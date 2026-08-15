@@ -8,6 +8,7 @@ from api.schemas.user import (
     UserResponse,
 )
 from domain.errors import (
+    ConfigRollbackError,
     InboundNotFoundError,
     SingBoxReloadError,
     UserAlreadyExistsError,
@@ -39,8 +40,12 @@ async def create_user(
         return UserResponse(**data)
     except UserAlreadyExistsError as e:
         raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
-    except (InboundNotFoundError, SingBoxReloadError) as e:
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, str(e)) from e
+    except (InboundNotFoundError, SingBoxReloadError, ConfigRollbackError) as error:
+        logger.exception("Failed to create user")
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Node configuration update failed",
+        ) from error
 
 
 @router.delete("/{username}", status_code=status.HTTP_200_OK)
@@ -60,8 +65,12 @@ async def delete_user(
         )
     except UserNotFoundError as e:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(e)) from e
-    except SingBoxReloadError as e:
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, str(e)) from e
+    except (SingBoxReloadError, ConfigRollbackError) as error:
+        logger.exception("Failed to delete user")
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Node configuration update failed",
+        ) from error
 
 
 @router.get("s", response_model=UserListResponse)

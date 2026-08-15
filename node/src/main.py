@@ -25,7 +25,6 @@ from api.schemas.system import (
 )
 from domain.ports import IContainerRuntime
 from fastapi import Depends, FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from starlette.routing import Match
 from utils.logging_config import configure_logging, get_logger
@@ -71,22 +70,12 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="VPN Node v2",
     description="Stateless REST API wrapper around sing-box VPN server for managing users across multiple protocols",
-    version="2.0.0",
+    version=API_VERSION,
     lifespan=lifespan,
     # Disable docs in production for security
     docs_url="/docs" if settings.DEV_MODE else None,
     redoc_url="/redoc" if settings.DEV_MODE else None,
     openapi_url="/openapi.json" if settings.DEV_MODE else None,
-)
-
-# Add CORS middleware
-# Allow all origins for now - can be restricted via environment variable in production
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Configure via environment variable in production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
 )
 
 
@@ -224,12 +213,12 @@ async def node_status(
         runtime.is_running(),
         tracker.is_available(),
     )
-    configuration_available = telemetry["configuration"] == "available"
+    configuration_available = telemetry.configuration_available
     healthy = configuration_available and sing_box_running and statistics_available
     return NodeStatusResponse(
         status=NodeStatus.OK if healthy else NodeStatus.DEGRADED,
         api_version=API_VERSION,
-        uptime=str(telemetry.get("uptime", "") or ""),
+        uptime=telemetry.uptime,
         configuration=(
             NodeAvailability.AVAILABLE
             if configuration_available
@@ -243,6 +232,6 @@ async def node_status(
             if statistics_available
             else NodeAvailability.UNAVAILABLE
         ),
-        user_count=telemetry.get("user_count"),
-        protocols=telemetry.get("protocols", []),
+        user_count=telemetry.user_count,
+        protocols=telemetry.protocols,
     )

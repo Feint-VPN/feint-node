@@ -3,13 +3,8 @@
 from enum import StrEnum
 from typing import Literal
 
+from domain.telemetry import NodeProtocolTelemetry
 from pydantic import BaseModel, Field
-
-
-class NodeProtocolStatus(BaseModel):
-    name: str
-    port: int
-    enabled: bool = True
 
 
 class NodeStatus(StrEnum):
@@ -47,4 +42,4 @@ class NodeStatusResponse(BaseModel):
     sing_box: NodeRuntimeStatus
     statistics: NodeAvailability
     user_count: int | None = Field(default=None, ge=0)
-    protocols: list[NodeProtocolStatus] = Field(default_factory=list)
+    protocols: list[NodeProtocolTelemetry] = Field(default_factory=list)
