@@ -6,6 +6,7 @@ from api.depends.authentication import (
     verify_api_secret,
 )
 from api.depends.initialization import get_init_service
+from api.depends.runtime import get_container_runtime
 from api.depends.statistics import (
     get_stats_backend,
     get_traffic_tracker,
@@ -15,6 +16,7 @@ from api.depends.user import get_user_service
 
 __all__ = (
     "configured_api_secret",
+    "get_container_runtime",
     "get_init_service",
     "get_node_telemetry_service",
     "get_stats_backend",

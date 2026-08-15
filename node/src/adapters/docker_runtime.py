@@ -17,6 +17,9 @@ class NoopRuntime(IContainerRuntime):
     async def reload(self) -> None:
         logger.info("DEV_MODE: skipping sing-box container reload")
 
+    async def is_running(self) -> bool:
+        return True
+
 
 class DockerRuntime(IContainerRuntime):
     def __init__(
@@ -58,3 +61,13 @@ class DockerRuntime(IContainerRuntime):
             raise
         except DockerException as e:
             raise SingBoxReloadError(str(e)) from e
+
+    async def is_running(self) -> bool:
+        try:
+            container = await asyncio.to_thread(
+                self._client.containers.get, self.container_name
+            )
+            await asyncio.to_thread(container.reload)
+            return container.status == "running"
+        except (DockerException, NotFound):
+            return False

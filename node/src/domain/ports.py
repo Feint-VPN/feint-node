@@ -27,6 +27,9 @@ class IContainerRuntime(ABC):
     @abstractmethod
     async def reload(self) -> None: ...
 
+    @abstractmethod
+    async def is_running(self) -> bool: ...
+
 
 class IStatsBackend(ABC):
     """Query real-time traffic statistics."""

@@ -13,7 +13,7 @@ class InboundNotFoundError(Exception):
     pass
 
 
-class ConfigSaveError(Exception):
+class ConfigRollbackError(Exception):
     pass
 
 

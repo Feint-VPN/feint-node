@@ -5,9 +5,8 @@ import uuid as _uuid
 from datetime import UTC, datetime
 
 from domain.errors import (
-    ConfigSaveError,
+    ConfigRollbackError,
     InboundNotFoundError,
-    SingBoxReloadError,
     UserAlreadyExistsError,
     UserNotFoundError,
 )
@@ -88,19 +87,22 @@ class UserService:
     async def _save_and_reload(self, config: SingBoxConfig, backup: str) -> None:
         try:
             await self._store.save(config)
-        except Exception as e:
-            await self._store.restore(backup)
-            raise ConfigSaveError(str(e)) from e
-        try:
             await self._runtime.reload()
-        except Exception as e:
-            # Config was saved but container reload failed — restore the file backup
-            # so the on-disk config matches what sing-box is actually running.
-            try:
-                await self._store.restore(backup)
-            except Exception:
-                logger.warning("Failed to restore backup after reload error")
-            raise SingBoxReloadError(str(e)) from e
+        except asyncio.CancelledError:
+            await self._rollback(backup)
+            raise
+        except Exception:
+            await self._rollback(backup)
+            raise
+
+    async def _rollback(self, backup: str) -> None:
+        try:
+            await self._store.restore(backup)
+            await self._runtime.reload()
+        except Exception as error:
+            raise ConfigRollbackError(
+                "The previous sing-box configuration could not be recovered."
+            ) from error
 
     @serialized_mutation
     async def create_user(

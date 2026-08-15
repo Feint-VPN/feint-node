@@ -8,7 +8,6 @@ from api.schemas.user import (
     UserResponse,
 )
 from domain.errors import (
-    ConfigSaveError,
     InboundNotFoundError,
     SingBoxReloadError,
     UserAlreadyExistsError,
@@ -40,7 +39,7 @@ async def create_user(
         return UserResponse(**data)
     except UserAlreadyExistsError as e:
         raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
-    except (InboundNotFoundError, ConfigSaveError, SingBoxReloadError) as e:
+    except (InboundNotFoundError, SingBoxReloadError) as e:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, str(e)) from e
 
 
@@ -61,7 +60,7 @@ async def delete_user(
         )
     except UserNotFoundError as e:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(e)) from e
-    except (ConfigSaveError, SingBoxReloadError) as e:
+    except SingBoxReloadError as e:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, str(e)) from e
 
 

@@ -33,7 +33,7 @@ class TestApplicationStartup:
         """Test the health check endpoint."""
         response = client.get("/health")
         assert response.status_code == 200
-        assert response.json() == {"status": "ok", "api_version": "2.0"}
+        assert response.json() == {"status": "ok", "api_version": "2.1"}
 
     def test_root_endpoint_does_not_exist(self, client):
         response = client.get("/", headers={"X-API-Secret": "test-secret-key"})
@@ -47,44 +47,99 @@ class TestApplicationStartup:
         )
 
     def test_status_returns_complete_runtime_metadata(self, client):
-        from api.depends import get_node_telemetry_service, get_user_service
+        from api.depends import (
+            get_container_runtime,
+            get_node_telemetry_service,
+            get_traffic_tracker,
+        )
         from main import app
 
         class StubTelemetry:
             async def get_status(self) -> dict:
                 return {
                     "uptime": "02d 07h",
+                    "configuration": "available",
+                    "user_count": 250,
                     "protocols": [
                         {"name": "VLESS Reality", "port": 22481, "enabled": True},
                         {"name": "VMess WS", "port": 14170, "enabled": True},
                     ],
                 }
 
-        class StubUsers:
-            async def list_users(self, *, skip: int, limit: int) -> dict:
-                assert (skip, limit) == (0, 1)
-                return {"users": [], "total": 250, "skip": skip, "limit": limit}
+        class StubRuntime:
+            async def is_running(self) -> bool:
+                return True
+
+        class StubTracker:
+            async def is_available(self) -> bool:
+                return True
 
         app.dependency_overrides[get_node_telemetry_service] = lambda: StubTelemetry()
-        app.dependency_overrides[get_user_service] = lambda: StubUsers()
+        app.dependency_overrides[get_container_runtime] = lambda: StubRuntime()
+        app.dependency_overrides[get_traffic_tracker] = lambda: StubTracker()
         try:
             response = client.get(
                 "/status", headers={"X-API-Secret": "test-secret-key"}
             )
         finally:
             app.dependency_overrides.pop(get_node_telemetry_service, None)
-            app.dependency_overrides.pop(get_user_service, None)
+            app.dependency_overrides.pop(get_container_runtime, None)
+            app.dependency_overrides.pop(get_traffic_tracker, None)
 
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "ok"
-        assert data["api_version"] == "2.0"
+        assert data["api_version"] == "2.1"
         assert data["uptime"] == "02d 07h"
+        assert data["configuration"] == "available"
+        assert data["sing_box"] == "running"
+        assert data["statistics"] == "available"
         assert data["user_count"] == 250
         assert data["protocols"] == [
             {"name": "VLESS Reality", "port": 22481, "enabled": True},
             {"name": "VMess WS", "port": 14170, "enabled": True},
         ]
+
+    def test_status_is_degraded_when_sing_box_is_stopped(self, client):
+        from api.depends import (
+            get_container_runtime,
+            get_node_telemetry_service,
+            get_traffic_tracker,
+        )
+        from main import app
+
+        class StubTelemetry:
+            async def get_status(self) -> dict:
+                return {
+                    "uptime": "00d 01h",
+                    "configuration": "available",
+                    "user_count": 3,
+                    "protocols": [],
+                }
+
+        class StubRuntime:
+            async def is_running(self) -> bool:
+                return False
+
+        class StubTracker:
+            async def is_available(self) -> bool:
+                return True
+
+        app.dependency_overrides[get_node_telemetry_service] = lambda: StubTelemetry()
+        app.dependency_overrides[get_container_runtime] = lambda: StubRuntime()
+        app.dependency_overrides[get_traffic_tracker] = lambda: StubTracker()
+        try:
+            response = client.get(
+                "/status", headers={"X-API-Secret": "test-secret-key"}
+            )
+        finally:
+            app.dependency_overrides.pop(get_node_telemetry_service, None)
+            app.dependency_overrides.pop(get_container_runtime, None)
+            app.dependency_overrides.pop(get_traffic_tracker, None)
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "degraded"
+        assert response.json()["sing_box"] == "stopped"
 
 
 class TestMiddleware:
@@ -220,7 +275,7 @@ class TestHiddenEndpoints:
             assert response.status_code == 404
             assert response.content == b""
         assert valid_health.status_code == 200
-        assert valid_health.json() == {"status": "ok", "api_version": "2.0"}
+        assert valid_health.json() == {"status": "ok", "api_version": "2.1"}
 
 
 class TestErrorHandling:

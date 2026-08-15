@@ -82,6 +82,8 @@ async def test_get_snapshot_returns_formatted_runtime_metadata(monkeypatch):
 
     assert snapshot["cpu_load"] == 70
     assert snapshot["uptime"] == "03d 05h"
+    assert snapshot["configuration"] == "available"
+    assert snapshot["user_count"] == 0
     assert snapshot["protocols"] == [
         {"name": "VLESS Reality", "port": 22481, "enabled": True},
         {"name": "VMess WS", "port": 14170, "enabled": True},
@@ -116,6 +118,8 @@ async def test_get_snapshot_falls_back_when_metrics_unavailable(monkeypatch):
 
     assert snapshot["cpu_load"] == -1
     assert snapshot["uptime"] == ""
+    assert snapshot["configuration"] == "available"
+    assert snapshot["user_count"] == 0
     assert snapshot["protocols"] == []
 
 
@@ -150,6 +154,38 @@ async def test_get_snapshot_uses_boot_time_when_proc_uptime_is_unavailable(monke
 
     assert snapshot["cpu_load"] == 0
     assert snapshot["uptime"] == "02d 07h"
+
+
+@pytest.mark.asyncio
+async def test_get_status_reports_unavailable_configuration(monkeypatch):
+    store = FakeStore(
+        SingBoxConfig(
+            log=LogConfig(),
+            inbounds=[],
+            outbounds=[Outbound(type="direct", tag="direct")],
+            route=Route(),
+        )
+    )
+
+    async def fail_load() -> SingBoxConfig:
+        raise OSError("config unavailable")
+
+    store.load = fail_load
+    service = NodeTelemetryService(store)
+    monkeypatch.setattr(
+        NodeTelemetryService,
+        "_read_uptime_seconds",
+        staticmethod(lambda: 3600),
+    )
+
+    status = await service.get_status()
+
+    assert status == {
+        "uptime": "00d 01h",
+        "configuration": "unavailable",
+        "user_count": None,
+        "protocols": [],
+    }
 
 
 async def _immediate_sleep() -> None:

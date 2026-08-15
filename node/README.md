@@ -74,7 +74,7 @@ The public runtime contract is versioned independently through
 `api.contract.API_VERSION`. The maintainer uses:
 
 - `/health` for a cheap compatibility probe;
-- `/status` for uptime, user count and protocol ports;
+- `/status` for config, sing-box and statistics readiness plus node telemetry;
 - `/user` and `/users` for local user lifecycle;
 - `/stats` for local traffic counters;
 - optional `/sub/{username}` for one-node subscription output.

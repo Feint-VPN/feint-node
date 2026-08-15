@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from domain.errors import (
-    ConfigSaveError,
+    ConfigRollbackError,
     InboundNotFoundError,
     SingBoxReloadError,
     UserAlreadyExistsError,
@@ -168,17 +168,59 @@ class TestCreateUser:
     async def test_reload_failure_triggers_rollback(self):
         store = _make_store(_make_config())
         runtime = AsyncMock()
-        runtime.reload.side_effect = [Exception("boom"), None]
+        runtime.reload.side_effect = [SingBoxReloadError("boom"), None]
         with pytest.raises(SingBoxReloadError):
             await _svc(store, runtime).create_user("bob")
         store.restore.assert_awaited_once_with("/tmp/backup.json")
+        assert runtime.reload.await_count == 2
 
     async def test_save_failure_triggers_restore(self):
         store = _make_store(_make_config())
         store.save.side_effect = OSError("disk full")
-        with pytest.raises(ConfigSaveError):
-            await _svc(store).create_user("bob")
+        runtime = AsyncMock()
+        with pytest.raises(OSError, match="disk full"):
+            await _svc(store, runtime).create_user("bob")
         store.restore.assert_awaited_once()
+        runtime.reload.assert_awaited_once()
+
+    async def test_failed_recovery_raises_rollback_error(self):
+        store = _make_store(_make_config())
+        runtime = AsyncMock()
+        runtime.reload.side_effect = [
+            OSError("new config failed"),
+            OSError("recovery failed"),
+        ]
+
+        with pytest.raises(ConfigRollbackError):
+            await _svc(store, runtime).create_user("bob")
+
+        store.restore.assert_awaited_once_with("/tmp/backup.json")
+        assert runtime.reload.await_count == 2
+
+    async def test_cancellation_waits_for_rollback(self):
+        store = _make_store(_make_config())
+        runtime = AsyncMock()
+        reload_started = asyncio.Event()
+        never = asyncio.Event()
+        calls = 0
+
+        async def reload() -> None:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                reload_started.set()
+                await never.wait()
+
+        runtime.reload.side_effect = reload
+        task = asyncio.create_task(_svc(store, runtime).create_user("bob"))
+        await reload_started.wait()
+
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        store.restore.assert_awaited_once_with("/tmp/backup.json")
+        assert calls == 2
 
     async def test_concurrent_creates_do_not_lose_users(self):
         store = _ConcurrentStore(_make_config())
@@ -229,10 +271,11 @@ class TestDeleteUser:
     async def test_reload_failure_triggers_rollback(self):
         store = _make_store(_make_config([_existing_user()]))
         runtime = AsyncMock()
-        runtime.reload.side_effect = [Exception("boom"), None]
+        runtime.reload.side_effect = [SingBoxReloadError("boom"), None]
         with pytest.raises(SingBoxReloadError):
             await _svc(store, runtime).delete_user("alice")
         store.restore.assert_awaited_once_with("/tmp/backup.json")
+        assert runtime.reload.await_count == 2
 
 
 # ---------------------------------------------------------------------------

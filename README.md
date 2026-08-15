@@ -163,7 +163,7 @@ All administrative routes use `X-API-Secret`.
 | Method | Path | Result |
 | --- | --- | --- |
 | `GET` | `/health` | Cheap compatibility probe: `status` and `api_version`. |
-| `GET` | `/status` | Uptime, local user count and enabled protocol ports. |
+| `GET` | `/status` | Readiness of the config, sing-box and statistics, plus node telemetry. |
 | `POST` | `/secrets` | Generate node, Reality and Shadowsocks secrets. |
 | `POST` | `/initialize` | Run DNS, environment, config, certificate and container initialization. |
 
@@ -177,14 +177,22 @@ Example response:
 ```json
 {
   "status": "ok",
-  "api_version": "2.0",
+  "api_version": "2.1",
   "uptime": "02d 07h",
+  "configuration": "available",
+  "sing_box": "running",
+  "statistics": "available",
   "user_count": 250,
   "protocols": [
     {"name": "VLESS Reality", "port": 28473, "enabled": true}
   ]
 }
 ```
+
+`status` is `degraded` when the configuration cannot be read, the sing-box
+container is stopped, or live statistics are unavailable. The endpoint still
+returns the state of every component so the maintainer can identify the failed
+part without additional probes.
 
 ### Users
 

@@ -1,21 +1,29 @@
 """FastAPI application entry point."""
 
+import asyncio
 import time
 from contextlib import asynccontextmanager
 
 from adapters.node_telemetry import NodeTelemetryService
+from adapters.traffic_tracker import TrafficTracker
 from api.contract import API_VERSION
 from api.depends import (
     configured_api_secret,
+    get_container_runtime,
     get_node_telemetry_service,
     get_traffic_tracker,
-    get_user_service,
     is_valid_api_secret,
     verify_api_secret,
 )
 from api.routers import initialization, stats, sub, user
-from api.schemas.system import NodeHealthResponse, NodeStatusResponse
-from domain.user_service import UserService
+from api.schemas.system import (
+    NodeAvailability,
+    NodeHealthResponse,
+    NodeRuntimeStatus,
+    NodeStatus,
+    NodeStatusResponse,
+)
+from domain.ports import IContainerRuntime
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
@@ -208,14 +216,33 @@ async def health_check() -> NodeHealthResponse:
 )
 async def node_status(
     node_telemetry: NodeTelemetryService = Depends(get_node_telemetry_service),
-    user_service: UserService = Depends(get_user_service),
+    runtime: IContainerRuntime = Depends(get_container_runtime),
+    tracker: TrafficTracker = Depends(get_traffic_tracker),
 ) -> NodeStatusResponse:
-    telemetry = await node_telemetry.get_status()
-    users = await user_service.list_users(skip=0, limit=1)
+    telemetry, sing_box_running, statistics_available = await asyncio.gather(
+        node_telemetry.get_status(),
+        runtime.is_running(),
+        tracker.is_available(),
+    )
+    configuration_available = telemetry["configuration"] == "available"
+    healthy = configuration_available and sing_box_running and statistics_available
     return NodeStatusResponse(
-        status="ok",
+        status=NodeStatus.OK if healthy else NodeStatus.DEGRADED,
         api_version=API_VERSION,
         uptime=str(telemetry.get("uptime", "") or ""),
-        user_count=users["total"],
+        configuration=(
+            NodeAvailability.AVAILABLE
+            if configuration_available
+            else NodeAvailability.UNAVAILABLE
+        ),
+        sing_box=(
+            NodeRuntimeStatus.RUNNING if sing_box_running else NodeRuntimeStatus.STOPPED
+        ),
+        statistics=(
+            NodeAvailability.AVAILABLE
+            if statistics_available
+            else NodeAvailability.UNAVAILABLE
+        ),
+        user_count=telemetry.get("user_count"),
         protocols=telemetry.get("protocols", []),
     )

@@ -56,7 +56,7 @@ class TestStartupHandlers:
                             assert response.status_code == 200
                             assert response.json() == {
                                 "status": "ok",
-                                "api_version": "2.0",
+                                "api_version": "2.1",
                             }
 
     def test_startup_with_missing_config(self):

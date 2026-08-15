@@ -6,7 +6,7 @@ import asyncio
 import os
 import time
 
-from domain.models import Inbound
+from domain.models import Inbound, SingBoxConfig
 from domain.ports import IConfigStore
 
 _PROTOCOL_LABELS = {
@@ -39,21 +39,36 @@ class NodeTelemetryService:
     async def get_status(self) -> dict:
         """Return runtime metadata without the slower CPU sampling delay."""
 
-        return {
-            "uptime": self._format_uptime(self._read_uptime_seconds()),
-            "protocols": await self._protocols(),
-        }
-
-    async def _protocols(self) -> list[dict]:
         try:
             config = await self._store.load()
         except Exception:
-            return []
+            return {
+                "uptime": self._format_uptime(self._read_uptime_seconds()),
+                "configuration": "unavailable",
+                "user_count": None,
+                "protocols": [],
+            }
 
+        return {
+            "uptime": self._format_uptime(self._read_uptime_seconds()),
+            "configuration": "available",
+            "user_count": len(
+                {
+                    user.name
+                    for inbound in config.inbounds
+                    for user in inbound.users
+                    if user.name
+                }
+            ),
+            "protocols": self._protocols(config),
+        }
+
+    @classmethod
+    def _protocols(cls, config: SingBoxConfig) -> list[dict]:
         protocols: list[dict] = []
         seen: set[tuple[str, int]] = set()
         for inbound in config.inbounds:
-            protocol = self._protocol_from_inbound(inbound)
+            protocol = cls._protocol_from_inbound(inbound)
             if protocol is None:
                 continue
 
