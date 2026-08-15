@@ -388,20 +388,3 @@ class TrafficTracker:
                     "extra_fields": {"path": str(self._state_path), "error": str(exc)}
                 },
             )
-
-
-_tracker: TrafficTracker | None = None
-
-
-def get_tracker() -> TrafficTracker:
-    """Return the process-wide TrafficTracker singleton."""
-    global _tracker
-    if _tracker is None:
-        _tracker = TrafficTracker()
-    return _tracker
-
-
-def reset_tracker_for_tests() -> None:
-    """Test helper — drop the singleton so tests can reconfigure it."""
-    global _tracker
-    _tracker = None

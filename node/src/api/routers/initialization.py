@@ -1,7 +1,7 @@
 """Initialization endpoints."""
 
 from adapters.init_service import InitService
-from api.deps import get_init_service, verify_api_secret
+from api.depends import get_init_service, verify_api_secret
 from api.schemas.initialization import InitRequest, InitResult
 from fastapi import APIRouter, Depends, status
 from utils.logging_config import get_logger

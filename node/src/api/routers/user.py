@@ -1,7 +1,6 @@
 """User management endpoints."""
 
-from adapters.traffic_tracker import get_tracker
-from api.deps import get_user_service, verify_api_secret
+from api.depends import get_traffic_tracker, get_user_service, verify_api_secret
 from api.schemas.user import (
     UserConfigsResponse,
     UserCreateRequest,
@@ -52,7 +51,7 @@ async def delete_user(
     try:
         await svc.delete_user(username)
         try:
-            await get_tracker().reset_user(username)
+            await get_traffic_tracker().reset_user(username)
         except Exception:
             logger.warning(
                 "Failed to reset traffic counters for deleted user", exc_info=True

@@ -1,5 +1,6 @@
 """Unit tests for domain.user_service.UserService with mocked ports."""
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -102,6 +103,29 @@ def _svc(store, runtime=None, builder=None) -> UserService:
     )
 
 
+class _ConcurrentStore:
+    """In-memory store that yields during I/O to expose lost updates."""
+
+    def __init__(self, config: SingBoxConfig) -> None:
+        self.config = config
+
+    async def load(self) -> SingBoxConfig:
+        snapshot = self.config.model_copy(deep=True)
+        await asyncio.sleep(0)
+        return snapshot
+
+    async def backup(self) -> str:
+        await asyncio.sleep(0)
+        return "/tmp/backup.json"
+
+    async def save(self, config: SingBoxConfig) -> None:
+        await asyncio.sleep(0)
+        self.config = config.model_copy(deep=True)
+
+    async def restore(self, backup_path: str) -> None:
+        raise AssertionError(f"Unexpected restore from {backup_path}")
+
+
 # ---------------------------------------------------------------------------
 # create_user
 # ---------------------------------------------------------------------------
@@ -155,6 +179,30 @@ class TestCreateUser:
         with pytest.raises(ConfigSaveError):
             await _svc(store).create_user("bob")
         store.restore.assert_awaited_once()
+
+    async def test_concurrent_creates_do_not_lose_users(self):
+        store = _ConcurrentStore(_make_config())
+        service = _svc(store)
+
+        await asyncio.gather(
+            service.create_user("alice"),
+            service.create_user("bob"),
+        )
+
+        for inbound in store.config.inbounds:
+            assert {user.name for user in inbound.users} == {"alice", "bob"}
+
+    async def test_concurrent_create_and_delete_do_not_lose_updates(self):
+        store = _ConcurrentStore(_make_config([_existing_user()]))
+        service = _svc(store)
+
+        await asyncio.gather(
+            service.create_user("bob"),
+            service.delete_user("alice"),
+        )
+
+        for inbound in store.config.inbounds:
+            assert {user.name for user in inbound.users} == {"bob"}
 
 
 # ---------------------------------------------------------------------------

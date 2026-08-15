@@ -20,7 +20,7 @@ def isolated_traffic_tracker():
     tracker = Mock(start=AsyncMock(), stop=AsyncMock())
     with (
         patch.dict(os.environ, {"API_SECRET": "test-secret"}),
-        patch("main.get_tracker", return_value=tracker),
+        patch("main.get_traffic_tracker", return_value=tracker),
     ):
         yield tracker
 

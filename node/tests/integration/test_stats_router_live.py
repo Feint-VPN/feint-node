@@ -11,10 +11,10 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture
 def app():
-    from adapters.traffic_tracker import reset_tracker_for_tests
+    import api.depends.statistics as statistics_dependencies
     from api.routers.stats import router
 
-    reset_tracker_for_tests()
+    statistics_dependencies.traffic_tracker = None
     app = FastAPI()
     app.include_router(router)
     return app
@@ -37,18 +37,18 @@ def auth_headers():
 
 
 def _seed_tracker(totals):
-    from adapters import traffic_tracker as tt
+    from api.depends import get_traffic_tracker
 
-    tracker = tt.get_tracker()
+    tracker = get_traffic_tracker()
     tracker._totals = totals
     return tracker
 
 
 class TestStatsRouterLive:
     def test_user_stats_returns_zero_when_unseen(self, client, mock_env, auth_headers):
-        from adapters.traffic_tracker import reset_tracker_for_tests
+        import api.depends.statistics as statistics_dependencies
 
-        reset_tracker_for_tests()
+        statistics_dependencies.traffic_tracker = None
         _seed_tracker({})
 
         resp = client.get("/user/alice/stats", headers=auth_headers)
@@ -62,9 +62,9 @@ class TestStatsRouterLive:
         assert data["available"] is False
 
     def test_user_stats_reports_tracked_totals(self, client, mock_env, auth_headers):
-        from adapters.traffic_tracker import reset_tracker_for_tests
+        import api.depends.statistics as statistics_dependencies
 
-        reset_tracker_for_tests()
+        statistics_dependencies.traffic_tracker = None
         ts = datetime(2025, 1, 1, 12, 0, tzinfo=UTC).isoformat()
         tracker = _seed_tracker(
             {"alice": {"upload": 100, "download": 250, "last_seen": ts}}
@@ -80,18 +80,18 @@ class TestStatsRouterLive:
         assert data["last_seen"].startswith("2025-01-01T12:00:00")
 
     def test_get_all_stats(self, client, mock_env, auth_headers):
-        from adapters.traffic_tracker import reset_tracker_for_tests
+        import api.depends.statistics as statistics_dependencies
 
-        reset_tracker_for_tests()
+        statistics_dependencies.traffic_tracker = None
         _seed_tracker(
             {
                 "alice": {"upload": 1, "download": 2, "last_seen": None},
                 "bob": {"upload": 5, "download": 5, "last_seen": None},
             }
         )
-        from adapters import traffic_tracker as tt
+        from api.depends import get_traffic_tracker
 
-        tt.get_tracker()._available = True
+        get_traffic_tracker()._available = True
 
         resp = client.get("/stats", headers=auth_headers)
         assert resp.status_code == 200
@@ -103,9 +103,9 @@ class TestStatsRouterLive:
     def test_user_stats_reports_backend_unavailable(
         self, client, mock_env, auth_headers
     ):
-        from adapters.traffic_tracker import reset_tracker_for_tests
+        import api.depends.statistics as statistics_dependencies
 
-        reset_tracker_for_tests()
+        statistics_dependencies.traffic_tracker = None
         tracker = _seed_tracker(
             {"alice": {"upload": 1, "download": 1, "last_seen": None}}
         )

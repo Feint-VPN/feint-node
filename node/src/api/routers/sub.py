@@ -13,7 +13,7 @@ import binascii
 import json
 from urllib.parse import quote
 
-from api.deps import get_user_service, verify_api_secret
+from api.depends import get_user_service, verify_api_secret
 from api.schemas.subscription import (
     SubscriptionSettingsResponse,
     SubscriptionSettingsUpdateRequest,

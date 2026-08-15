@@ -1,7 +1,7 @@
 """Statistics endpoints — backed by the in-process TrafficTracker."""
 
-from adapters.traffic_tracker import TrafficTracker, get_tracker
-from api.deps import verify_api_secret
+from adapters.traffic_tracker import TrafficTracker
+from api.depends import get_traffic_tracker, verify_api_secret
 from api.schemas.user import UserStats
 from fastapi import APIRouter, Depends
 from utils.logging_config import get_logger
@@ -11,14 +11,10 @@ logger = get_logger(__name__)
 router = APIRouter(tags=["statistics"], dependencies=[Depends(verify_api_secret)])
 
 
-def _get_tracker() -> TrafficTracker:
-    return get_tracker()
-
-
 @router.get("/user/{username}/stats", response_model=UserStats)
 async def get_user_stats(
     username: str,
-    tracker: TrafficTracker = Depends(_get_tracker),
+    tracker: TrafficTracker = Depends(get_traffic_tracker),
 ) -> UserStats:
     data = await tracker.get_user(username)
     upload = int(data.get("upload", 0))
@@ -35,7 +31,7 @@ async def get_user_stats(
 
 @router.get("/stats", response_model=list[UserStats])
 async def get_all_stats(
-    tracker: TrafficTracker = Depends(_get_tracker),
+    tracker: TrafficTracker = Depends(get_traffic_tracker),
 ) -> list[UserStats]:
     snapshot = await tracker.get_all()
     available = await tracker.is_available()

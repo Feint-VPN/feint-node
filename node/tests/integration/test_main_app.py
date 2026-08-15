@@ -47,7 +47,7 @@ class TestApplicationStartup:
         )
 
     def test_status_returns_complete_runtime_metadata(self, client):
-        from api.deps import get_node_telemetry_service, get_user_service
+        from api.depends import get_node_telemetry_service, get_user_service
         from main import app
 
         class StubTelemetry:

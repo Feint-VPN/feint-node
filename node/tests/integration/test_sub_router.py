@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
-from api.deps import get_user_service
+from api.depends import get_user_service
 from api.routers.sub import router
 from fastapi import FastAPI
 from fastapi.testclient import TestClient

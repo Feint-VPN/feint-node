@@ -8,7 +8,7 @@ import os
 from unittest.mock import patch
 
 import pytest
-from api.deps import verify_api_secret
+from api.depends import verify_api_secret
 from fastapi import HTTPException, status
 from hypothesis import given, settings
 from hypothesis import strategies as st

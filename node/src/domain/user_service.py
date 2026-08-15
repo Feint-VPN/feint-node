@@ -1,5 +1,6 @@
 """Domain service: VPN user management."""
 
+import asyncio
 import uuid as _uuid
 from datetime import UTC, datetime
 
@@ -11,6 +12,7 @@ from domain.errors import (
     UserNotFoundError,
 )
 from domain.models import Inbound, InboundUser, SingBoxConfig
+from domain.mutation import serialized_mutation
 from domain.ports import IConfigStore, IConfigUrlBuilder, IContainerRuntime
 from utils.crypto import derive_reality_public_key, generate_secure_password
 from utils.logging_config import get_logger
@@ -81,6 +83,7 @@ class UserService:
         self._store = store
         self._runtime = runtime
         self._url_builder = url_builder
+        self._mutation_lock = asyncio.Lock()
 
     async def _save_and_reload(self, config: SingBoxConfig, backup: str) -> None:
         try:
@@ -99,6 +102,7 @@ class UserService:
                 logger.warning("Failed to restore backup after reload error")
             raise SingBoxReloadError(str(e)) from e
 
+    @serialized_mutation
     async def create_user(
         self,
         username: str,
@@ -136,6 +140,7 @@ class UserService:
             "created_at": datetime.now(tz=UTC),
         }
 
+    @serialized_mutation
     async def delete_user(self, username: str) -> None:
         config = await self._store.load()
         backup = await self._store.backup()

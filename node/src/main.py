@@ -4,11 +4,11 @@ import time
 from contextlib import asynccontextmanager
 
 from adapters.node_telemetry import NodeTelemetryService
-from adapters.traffic_tracker import get_tracker
 from api.contract import API_VERSION
-from api.deps import (
+from api.depends import (
     configured_api_secret,
     get_node_telemetry_service,
+    get_traffic_tracker,
     get_user_service,
     is_valid_api_secret,
     verify_api_secret,
@@ -43,7 +43,7 @@ async def lifespan(app: FastAPI):
 
     logger.info("Application startup complete")
 
-    tracker = get_tracker()
+    tracker = get_traffic_tracker()
     try:
         await tracker.start()
     except Exception:
