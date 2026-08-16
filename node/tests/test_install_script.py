@@ -45,9 +45,24 @@ def test_install_script_generates_secrets_safely_with_pipefail():
     assert "printf '%s' \"$secret\"" in content, (
         "install.sh must emit generated secrets without a trailing newline"
     )
-    assert 'if [[ ! -f "$ENV_FILE" ]]; then' in content, (
-        "install.sh must preserve an existing runtime env"
-    )
+
+
+def test_install_script_rejects_an_existing_install_before_mutation():
+    content = Path("../install.sh").read_text(encoding="utf-8")
+
+    guard = 'if [[ -f "$INSTALL_DIR/.env.local" ]]; then'
+    assert guard in content
+    assert "Node already installed" in content
+    assert content.index(guard) < content.index("apt-get update")
+    assert content.index(guard) < content.index('git -C "$INSTALL_DIR" reset --hard')
+
+
+def test_install_script_command_runner_preserves_failures():
+    content = Path("../install.sh").read_text(encoding="utf-8")
+
+    assert '"$@" 2>&1 | sed' in content
+    assert 'done < <("$@" 2>&1)' not in content
+    assert "run_with_log" not in content
 
 
 def test_install_script_never_prints_the_api_secret():
