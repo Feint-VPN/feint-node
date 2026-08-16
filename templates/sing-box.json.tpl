@@ -92,7 +92,17 @@
       { "action": "sniff" },
       { "action": "resolve", "strategy": "ipv4_only" },
       { "ip_cidr": ["::/0"], "outbound": "block" },
-      { "ip_is_private": true, "outbound": "block" }
+      { "ip_is_private": true, "outbound": "block" },
+      { "rule_set": "geoip-ru", "action": "reject" }
+    ],
+    "rule_set": [
+      {
+        "type": "remote",
+        "tag": "geoip-ru",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-ru.srs",
+        "update_interval": "1d"
+      }
     ],
     "final": "direct"
   },

@@ -72,11 +72,25 @@ class RouteRule(BaseModel):
     strategy: str | None = None
     ip_is_private: bool | None = None
     ip_cidr: list[str] | None = None
+    rule_set: str | list[str] | None = None
     outbound: str | None = None
 
 
+class RuleSet(BaseModel):
+    model_config = {"extra": "allow"}
+
+    type: str
+    tag: str
+    format: str | None = None
+    url: str | None = None
+    update_interval: str | None = None
+
+
 class Route(BaseModel):
+    model_config = {"extra": "allow"}
+
     rules: list[RouteRule] = []
+    rule_set: list[RuleSet] = []
     final: str = "direct"
 
 
