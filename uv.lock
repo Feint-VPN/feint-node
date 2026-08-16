@@ -545,7 +545,6 @@ dependencies = [
     { name = "email-validator" },
     { name = "fastapi" },
     { name = "grpcio" },
-    { name = "httpx" },
     { name = "protobuf" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -555,6 +554,7 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
+    { name = "httpx" },
     { name = "hypothesis" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -569,7 +569,7 @@ requires-dist = [
     { name = "email-validator", specifier = ">=2.1" },
     { name = "fastapi", specifier = ">=0.109" },
     { name = "grpcio", specifier = ">=1.64" },
-    { name = "httpx", specifier = ">=0.26" },
+    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.26" },
     { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.98" },
     { name = "protobuf", specifier = ">=5.27" },
     { name = "pydantic", specifier = ">=2.6,<3.0" },

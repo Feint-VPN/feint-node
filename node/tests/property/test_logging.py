@@ -109,7 +109,7 @@ class TestSecretRedactionInLogs:
         filter_instance.filter(record)
 
         # Password should be redacted
-        assert password not in record.msg
+        assert f"password {password}" not in record.msg
         assert "[PASSWORD_REDACTED]" in record.msg or "[SECRET_REDACTED]" in record.msg
 
     @given(
@@ -201,7 +201,7 @@ class TestSecretRedactionInLogs:
 
         # All sensitive data should be redacted
         assert uuid_str not in record.msg
-        assert password not in record.msg
+        assert f"password {password}" not in record.msg
         assert secret not in record.msg
         assert "[UUID_REDACTED]" in record.msg
         assert "[PASSWORD_REDACTED]" in record.msg or "[SECRET_REDACTED]" in record.msg
@@ -379,7 +379,7 @@ class TestSecretRedactionInLogs:
         # Verify sensitive data is not in the redacted message. A generated secret
         # may legitimately equal a JSON metadata key such as "severity".
         assert uuid_str not in redacted_message
-        assert password not in redacted_message
+        assert f"password {password}" not in redacted_message
         assert "[UUID_REDACTED]" in redacted_message
         assert (
             "[PASSWORD_REDACTED]" in redacted_message

@@ -12,7 +12,8 @@ permissions:
   packages: write
 
 env:
-  IMAGE: ghcr.io/feint-vpn/feint-node
+  NODE_IMAGE: ghcr.io/feint-vpn/feint-node
+  SINGBOX_IMAGE: ghcr.io/feint-vpn/feint-sing-box
 
 jobs:
   build:
@@ -32,10 +33,10 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Generate image metadata
-        id: metadata
+        id: node-metadata
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.IMAGE }}
+          images: ${{ env.NODE_IMAGE }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,prefix=sha-
@@ -47,7 +48,27 @@ jobs:
         with:
           context: ./node
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.metadata.outputs.tags }}
-          labels: ${{ steps.metadata.outputs.labels }}
+          tags: ${{ steps.node-metadata.outputs.tags }}
+          labels: ${{ steps.node-metadata.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Generate sing-box image metadata
+        id: singbox-metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.SINGBOX_IMAGE }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=v1.13.12-feint.1
+            type=sha,prefix=sha-
+
+      - name: Build and publish sing-box
+        uses: docker/build-push-action@v6
+        with:
+          context: ./sing-box
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.singbox-metadata.outputs.tags }}
+          labels: ${{ steps.singbox-metadata.outputs.labels }}
+          cache-from: type=gha,scope=sing-box
+          cache-to: type=gha,mode=max,scope=sing-box

@@ -30,7 +30,7 @@ services:
       - vpn-network
 
   sing-box:
-    image: ${SINGBOX_IMAGE:-ghcr.io/sagernet/sing-box:v1.13.12}
+    image: ${SINGBOX_IMAGE:-ghcr.io/feint-vpn/feint-sing-box:v1.13.12-feint.1}
     container_name: sing-box
     network_mode: host
     env_file:

@@ -1,118 +1,99 @@
-"""Regression checks for the root update.sh helper."""
+"""Regression checks for the production updater."""
 
+import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
-
-def test_update_script_falls_back_to_main_branch():
-    content = Path("../update.sh").read_text(encoding="utf-8")
-
-    assert 'echo "main"' in content
-
-
-def test_update_script_exists():
-    script_path = Path("../update.sh")
-    assert script_path.exists(), "update.sh script not found"
-    assert script_path.is_file(), "update.sh is not a file"
+ROOT = Path(__file__).resolve().parents[2]
+UPDATE = ROOT / "update.sh"
+SYNC = ROOT / "scripts" / "sync-singbox.py"
+TEMPLATE = ROOT / "templates" / "sing-box.json.tpl"
 
 
-def test_update_script_has_shebang():
-    script_path = Path("../update.sh")
-    first_line = script_path.read_text(encoding="utf-8").splitlines()[0]
-    assert first_line == "#!/bin/bash", "update.sh must have #!/bin/bash shebang"
+def test_update_script_has_a_small_transactional_flow():
+    content = UPDATE.read_text(encoding="utf-8")
+
+    assert content.startswith("#!/bin/bash\n")
+    assert "git fetch" in content
+    assert 'git reset --hard "origin/$BRANCH"' in content
+    assert "trap rollback ERR" in content
+    assert 'git reset --hard "$OLD_COMMIT"' in content
+    assert 'cp "$ENV_BACKUP" "$ENV_FILE"' in content
+    assert 'cp "$CONFIG_BACKUP"' in content
+    assert "exec -T --user root vpn-node-api" in content
+    assert "chown 1000:1000" in content
+    assert "chmod 600" in content
+    assert "pull certbot sing-box vpn-node-api" in content
+    assert "ghcr.io/feint-vpn/feint-sing-box:v1.13.12-feint.1" in content
+    assert "up -d --no-build --remove-orphans" in content
+    assert "wait_for_status" in content
+    assert 'success "Previous deployment restored"' in content
 
 
-def test_update_script_has_usage_and_options():
-    script_path = Path("../update.sh")
-    content = script_path.read_text(encoding="utf-8")
+def test_update_script_synchronizes_and_validates_the_template():
+    content = UPDATE.read_text(encoding="utf-8")
 
-    assert "usage()" in content, "update.sh must have usage() function"
-    assert "--branch" in content, "update.sh must document branch selection"
-    assert "--dir" in content, "update.sh must document install directory override"
-    assert "--force" in content, "update.sh must document tracked-change override"
-
-
-def test_update_script_updates_git_and_containers():
-    script_path = Path("../update.sh")
-    content = script_path.read_text(encoding="utf-8")
-
-    assert "git fetch" in content, "update.sh must fetch the target branch"
-    assert "git reset --hard" in content, "update.sh must reset to the remote branch"
-    assert "compose pull certbot sing-box vpn-node-api" in content, (
-        "update.sh must pull all service images"
-    )
-    assert "compose build" not in content, "update.sh must not build on the VPS"
-    assert "compose up -d --no-build --remove-orphans" in content, (
-        "update.sh must restart prepared images"
+    assert "scripts/sync-singbox.py" in content
+    assert "templates/sing-box.json.tpl" in content
+    assert "sing-box check" in content
+    assert content.index("sing-box check") < content.index(
+        '"${COMPOSE[@]}" exec -T vpn-node-api mv'
     )
 
 
-def test_update_script_preserves_runtime_configuration():
-    script_path = Path("../update.sh")
-    content = script_path.read_text(encoding="utf-8")
+def test_template_sync_preserves_users(tmp_path: Path):
+    current = tmp_path / "current.json"
+    output = tmp_path / "updated.json"
+    users = {
+        "vless-reality-in": [{"name": "alice", "uuid": "user-id"}],
+        "trojan-in": [{"name": "alice", "password": "secret"}],
+    }
+    current.write_text(
+        json.dumps(
+            {
+                "inbounds": [
+                    {"tag": tag, "users": inbound_users}
+                    for tag, inbound_users in users.items()
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    env = os.environ | {
+        "SERVER_DOMAIN": "vpn.example.com",
+        "VLESS_PORT": "11001",
+        "VMESS_PORT": "11002",
+        "TROJAN_PORT": "11003",
+        "HYSTERIA2_PORT": "11004",
+        "SHADOWSOCKS_PORT": "11005",
+        "REALITY_SERVER_NAME": "www.microsoft.com",
+        "REALITY_PRIVATE_KEY": "private-key",
+        "REALITY_SHORT_ID": "0123456789abcdef",
+        "SHADOWSOCKS_METHOD": "2022-blake3-aes-256-gcm",
+        "SHADOWSOCKS_PASSWORD": "ss-secret",
+        "CLASH_API_SECRET": "clash-secret",
+    }
 
-    assert ".env.local" in content, "update.sh must handle .env.local"
-    assert "backup_file" in content, "update.sh must back up runtime configuration"
-    assert '--env-file "$ENV_FILE"' in content, (
-        "update.sh must load declarative runtime values from .env.local"
-    )
-
-
-def test_update_script_migrates_stats_runtime():
-    script_path = Path("../update.sh")
-    content = script_path.read_text(encoding="utf-8")
-
-    assert "ensure_stats_runtime_env" in content, (
-        "update.sh must ensure clash_api env keys exist"
-    )
-    assert "CLASH_API_SECRET" in content, (
-        "update.sh must provision CLASH_API_SECRET during updates"
-    )
-    assert "V2RAY_API_ADDRESS" in content, (
-        "update.sh must provision V2RAY_API_ADDRESS during updates"
-    )
-    assert "migrate_stats_config" in content, (
-        "update.sh must migrate persisted sing-box config for v2ray_api stats"
-    )
-    assert (
-        '"listen" != "0.0.0.0:10085"' in content or 'v2ray_api["listen"]' in content
-    ), "update.sh must enforce the v2ray_api listener"
-    assert "/opt/sing-box/config.json" in content, (
-        "update.sh must touch the persisted sing-box config"
-    )
-
-
-def test_update_script_verifies_stats_backends_after_update():
-    script_path = Path("../update.sh")
-    content = script_path.read_text(encoding="utf-8")
-
-    assert "verify_clash_api_access" in content, (
-        "update.sh must verify clash_api reachability after migration"
-    )
-    assert "verify_v2ray_api_access" in content, (
-        "update.sh must verify v2ray_api reachability after migration"
-    )
-    assert "compose exec -T vpn-node-api python" in content, (
-        "update.sh must check stats backends from the API container"
+    subprocess.run(
+        [sys.executable, SYNC, TEMPLATE, current, output],
+        check=True,
+        env=env,
     )
 
-
-def test_update_script_secret_generation_is_safe_with_pipefail():
-    script_path = Path("../update.sh")
-    content = script_path.read_text(encoding="utf-8")
-
-    assert "set +o pipefail" in content, (
-        "update.sh must temporarily disable pipefail when generating secrets"
-    )
-    assert "printf '%s' \"$secret\"" in content, (
-        "update.sh must emit the generated secret without a trailing newline"
-    )
+    updated = json.loads(output.read_text(encoding="utf-8"))
+    inbounds = {inbound["tag"]: inbound for inbound in updated["inbounds"]}
+    assert inbounds["vless-reality-in"]["users"] == users["vless-reality-in"]
+    assert inbounds["trojan-in"]["users"] == users["trojan-in"]
+    assert inbounds["vmess-ws-in"]["users"] == []
+    assert updated["experimental"]["v2ray_api"]["stats"]["users"] == ["alice"]
+    assert updated["route"]["final"] == "direct"
+    assert inbounds["vless-reality-in"]["listen_port"] == 11001
 
 
 def test_scripts_readme_documents_update_script():
-    readme_path = Path("../scripts/README.md")
-    content = readme_path.read_text(encoding="utf-8")
+    content = (ROOT / "scripts" / "README.md").read_text(encoding="utf-8")
 
-    assert "update.sh" in content, "scripts/README.md must document update.sh"
-    assert "sudo bash ./update.sh" in content, (
-        "scripts/README.md must show update.sh usage"
-    )
+    assert "update.sh" in content
+    assert "sudo bash ./update.sh" in content

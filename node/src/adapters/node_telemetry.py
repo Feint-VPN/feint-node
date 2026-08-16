@@ -2,17 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
-import os
 import time
 
 from domain.models import Inbound, SingBoxConfig
 from domain.ports import IConfigStore
-from domain.telemetry import (
-    NodeProtocolTelemetry,
-    NodeTelemetrySnapshot,
-    NodeTelemetryStatus,
-)
+from domain.telemetry import NodeProtocolTelemetry, NodeTelemetryStatus
 
 _PROTOCOL_LABELS = {
     "vless": "VLESS",
@@ -35,15 +29,8 @@ class NodeTelemetryService:
     def __init__(self, store: IConfigStore) -> None:
         self._store = store
 
-    async def get_snapshot(self) -> NodeTelemetrySnapshot:
-        status = await self.get_status()
-        return NodeTelemetrySnapshot(
-            cpu_load=await self._cpu_load_percent(),
-            **status.model_dump(),
-        )
-
     async def get_status(self) -> NodeTelemetryStatus:
-        """Return runtime metadata without the slower CPU sampling delay."""
+        """Return runtime metadata."""
 
         try:
             config = await self._store.load()
@@ -84,73 +71,6 @@ class NodeTelemetryService:
             protocols.append(protocol)
 
         return protocols
-
-    @staticmethod
-    async def _cpu_load_percent() -> int:
-        initial_sample = NodeTelemetryService._read_cpu_times()
-        if initial_sample is not None:
-            await asyncio.sleep(0.2)
-            final_sample = NodeTelemetryService._read_cpu_times()
-            if final_sample is not None:
-                total_delta = final_sample[0] - initial_sample[0]
-                idle_delta = final_sample[1] - initial_sample[1]
-                if total_delta > 0:
-                    busy_percent = ((total_delta - idle_delta) / total_delta) * 100
-                    return NodeTelemetryService._normalize_percent(busy_percent)
-
-        one_minute_load = NodeTelemetryService._read_loadavg()
-        if one_minute_load is None:
-            return -1
-
-        cpu_count = os.cpu_count() or 1
-        normalized = (one_minute_load / cpu_count) * 100
-        return NodeTelemetryService._normalize_percent(normalized)
-
-    @staticmethod
-    def _normalize_percent(value: float) -> int:
-        if value <= 0:
-            return 0
-
-        rounded = round(value)
-        if rounded == 0:
-            return 1
-        return max(0, min(rounded, 100))
-
-    @staticmethod
-    def _read_cpu_times() -> tuple[int, int] | None:
-        try:
-            with open("/proc/stat", encoding="utf-8") as stat_file:
-                fields = stat_file.readline().split()
-        except (FileNotFoundError, OSError):
-            return None
-
-        if not fields or fields[0] != "cpu":
-            return None
-
-        try:
-            values = [int(value) for value in fields[1:]]
-        except ValueError:
-            return None
-
-        if len(values) < 4:
-            return None
-
-        total = sum(values)
-        idle = values[3] + (values[4] if len(values) > 4 else 0)
-        return total, idle
-
-    @staticmethod
-    def _read_loadavg() -> float | None:
-        try:
-            with open("/proc/loadavg", encoding="utf-8") as loadavg_file:
-                return float(loadavg_file.read().split()[0])
-        except (FileNotFoundError, ValueError, OSError):
-            pass
-
-        try:
-            return float(os.getloadavg()[0])
-        except (AttributeError, OSError, ValueError):
-            return None
 
     @staticmethod
     def _read_uptime_seconds() -> int | None:

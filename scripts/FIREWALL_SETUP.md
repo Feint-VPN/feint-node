@@ -8,9 +8,10 @@ change:
 sudo ./scripts/setup-firewall.sh
 ```
 
-The script opens:
+The script always moves SSH to a new checked port and replaces the host's UFW
+rules with this allowlist:
 
-- SSH (the current port, or a new port you choose interactively)
+- The new SSH TCP port
 - TCP 80 for the Let's Encrypt standalone HTTP challenge
 - The configured API TCP port
 - VLESS, VMess, and Trojan TCP ports
@@ -37,21 +38,33 @@ Do not open the new firewall ports before the port command has accepted the
 configuration, and do not remove old rules manually unless you have verified
 that the new listeners are healthy.
 
-## Changing SSH
+All other host ports are denied. Docker-published bridge ports remain managed by
+Docker rather than UFW.
 
-If prompted to change SSH, keep the current terminal open and verify a new
-connection before closing it:
+The Clash and V2Ray statistics APIs stay private. Ports `9090` and `10085` are
+allowed only from the node's Docker bridge subnet, never from the public
+interface.
+
+## SSH confirmation
+
+Keep the current terminal open. The old SSH port remains available only during
+the transition. Open the command printed by the script in a second terminal:
 
 ```bash
 ssh -p 45123 user@your-server
 ```
 
-If the new connection fails, use your VPS console to restore the latest
-`/etc/ssh/sshd_config.backup.*`, restart SSH, and allow the previous port:
+Type `CONFIRM` in the original terminal only after the second connection works.
+The script then closes the old port. Any failure before confirmation restores
+the SSH configuration and restrictive firewall on the previous SSH port.
+
+Backups are retained under `/etc/ssh/feint-backups`. For console recovery:
 
 ```bash
-sudo systemctl restart sshd
-sudo ufw allow 22/tcp
+sudo tar -C / -xpf /etc/ssh/feint-backups/sshd-<timestamp>.tar
+sudo systemctl daemon-reload
+sudo systemctl restart ssh.service
+sudo ufw allow <old-port>/tcp
 ```
 
 ## Troubleshooting
@@ -61,11 +74,12 @@ sudo ufw status numbered
 sudo ss -lntup
 ```
 
-If UFW blocks access unexpectedly, use the server console:
+If UFW blocks access unexpectedly, use the server console and restore only the
+required SSH port:
 
 ```bash
 sudo ufw disable
 sudo ufw reset
-sudo ufw allow 22/tcp
+sudo ufw allow <old-port>/tcp
 sudo ufw enable
 ```
