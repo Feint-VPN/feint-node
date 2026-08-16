@@ -132,7 +132,7 @@ restore_ssh() {
 rollback() {
     local status=$?
     (( status != 0 )) || status=1
-    trap - ERR INT TERM
+    trap - ERR INT TERM HUP
     set +e
     error "Firewall setup failed; restoring SSH on port $OLD_SSH_PORT"
     [[ "$SSH_CHANGED" == false ]] || restore_ssh
@@ -140,7 +140,7 @@ rollback() {
     restart_ssh
     exit "$status"
 }
-trap rollback ERR INT TERM
+trap rollback ERR INT TERM HUP
 
 info "Moving SSH from $OLD_SSH_PORT to $NEW_SSH_PORT"
 mkdir -p /etc/ssh/sshd_config.d
@@ -177,14 +177,15 @@ fi
 warn "Keep this terminal open. In a second terminal, connect with:"
 echo "  ssh -p $NEW_SSH_PORT <user>@<server>"
 echo
-read -r -p "Type CONFIRM after the new SSH session works: " confirmation
+printf 'Type CONFIRM after the new SSH session works: '
+read -r confirmation
 if [[ "$confirmation" != CONFIRM ]]; then
     error "The new SSH connection was not confirmed"
     false
 fi
 
 ufw --force delete allow "$OLD_SSH_PORT/tcp" >/dev/null
-trap - ERR INT TERM
+trap - ERR INT TERM HUP
 
 success "SSH moved to $NEW_SSH_PORT"
 success "All non-Feint host ports are closed"

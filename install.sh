@@ -141,6 +141,16 @@ run() {
     "$@" 2>&1 | sed 's/^/  │ /'
 }
 
+wait_for_status() {
+    local url="$1"
+    for _ in {1..30}; do
+        curl -skf -H "X-API-Secret: ${API_SECRET}" "$url" \
+            | grep -q '"status":"ok"' && return 0
+        sleep 1
+    done
+    return 1
+}
+
 # ── step 1: install system packages ──────────────────────────────────────────
 header "Step 1 / 6 — System packages"
 
@@ -459,7 +469,11 @@ info "Starting all containers..."
 compose up -d --no-build
 
 info "Waiting for VPN services to start..."
-sleep 6
+STATUS_SCHEME=https
+[[ "$(env_get API_USE_SSL "$ENV_FILE" true)" == true ]] || STATUS_SCHEME=http
+wait_for_status "${STATUS_SCHEME}://127.0.0.1:${API_PORT}/status" \
+    || die "Containers started, but the authenticated API status check failed"
+success "API status is healthy"
 
 # ── MTU TCPMSS clamp (fix for providers with reduced path MTU) ────────────────
 info "Applying MTU TCPMSS clamp for NAT forwarding..."

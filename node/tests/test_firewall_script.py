@@ -20,12 +20,14 @@ def test_ssh_transition_is_validated_confirmed_and_reversible():
     content = SCRIPT.read_text(encoding="utf-8")
 
     assert "SSH_BACKUP=" in content
-    assert "trap rollback ERR INT TERM" in content
+    assert "trap rollback ERR INT TERM HUP" in content
     assert "sshd -t" in content
     assert "sshd -T" in content
     assert "systemctl daemon-reload" in content
     assert "ssh.socket" in content
     assert "Type CONFIRM" in content
+    assert "read -r confirmation" in content
+    assert "read -r -p" not in content
     assert content.index('ufw allow "$transition_port/tcp"') < content.index(
         "Type CONFIRM"
     )

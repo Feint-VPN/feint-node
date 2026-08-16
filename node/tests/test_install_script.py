@@ -75,6 +75,17 @@ def test_install_script_does_not_require_an_interactive_terminal():
     )
 
 
+def test_install_script_waits_for_authenticated_status_before_success():
+    content = (ROOT / "install.sh").read_text(encoding="utf-8")
+
+    assert "wait_for_status()" in content
+    assert "X-API-Secret: ${API_SECRET}" in content
+    assert "127.0.0.1:${API_PORT}/status" in content
+    assert content.index("wait_for_status()") < content.index(
+        'header "🎉  Installation complete"'
+    )
+
+
 def test_install_script_never_prints_the_api_secret():
     script_path = ROOT / "install.sh"
     content = script_path.read_text(encoding="utf-8")
