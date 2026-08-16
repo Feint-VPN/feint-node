@@ -293,6 +293,7 @@ REALITY_SHORT_ID=$(openssl rand -hex 8)
 #   Shadowsocks 2022 PSK (32 bytes for aes-256)
 SS_PASSWORD=$(openssl rand -base64 32 | tr -d '\n')
 SS_METHOD="2022-blake3-aes-256-gcm"
+REALITY_SERVER_NAME="www.microsoft.com"
 CLASH_API_SECRET=$(gen_secret 32)
 
 #   Random VPN ports
@@ -345,7 +346,7 @@ SHADOWSOCKS_PORT=${SS_PORT}
 # Reality Settings (VLESS)
 REALITY_PRIVATE_KEY=${REALITY_PRIVATE}
 REALITY_SHORT_ID=${REALITY_SHORT_ID}
-REALITY_SERVER_NAME=www.microsoft.com
+REALITY_SERVER_NAME=${REALITY_SERVER_NAME}
 
 # Shadowsocks Settings
 SHADOWSOCKS_PASSWORD=${SS_PASSWORD}
@@ -444,22 +445,49 @@ compose() { docker compose --env-file "$ENV_FILE" "$@"; }
 info "Pulling service images..."
 run_with_log compose pull vpn-node-api sing-box
 
-# ── generate sing-box config.json directly ────────────────────────────────────
-# The /initialize API endpoint regenerates all secrets and uses hardcoded ports,
-# so we bypass it and write config.json ourselves from the values already saved
-# in .env.local.
+# ── render and validate sing-box config.json ──────────────────────────────────
 info "Generating sing-box config.json..."
 
-# Build the JSON using a bash heredoc (variable expansion, no Python required)
-cat > /tmp/singbox-install-config.json << SINGBOX_CFG
-{"log":{"level":"info","timestamp":true},"dns":{"servers":[{"type":"udp","tag":"google","server":"8.8.8.8"}],"final":"google","strategy":"ipv4_only","reverse_mapping":true},"inbounds":[{"type":"vless","tag":"vless-reality-in","listen":"::","listen_port":${VLESS_PORT},"users":[],"tls":{"enabled":true,"server_name":"www.microsoft.com","reality":{"enabled":true,"handshake":{"server":"www.microsoft.com","server_port":443},"private_key":"${REALITY_PRIVATE}","short_id":["${REALITY_SHORT_ID}"]}},"multiplex":{"enabled":true,"padding":true}},{"type":"vmess","tag":"vmess-ws-in","listen":"::","listen_port":${VMESS_PORT},"users":[],"transport":{"type":"ws","path":"/vmess-path","max_early_data":2048,"early_data_header_name":"Sec-WebSocket-Protocol"},"tls":{"enabled":true,"certificate_path":"/etc/letsencrypt/live/${DOMAIN}/fullchain.pem","key_path":"/etc/letsencrypt/live/${DOMAIN}/privkey.pem"}},{"type":"trojan","tag":"trojan-in","listen":"::","listen_port":${TROJAN_PORT},"users":[],"tls":{"enabled":true,"certificate_path":"/etc/letsencrypt/live/${DOMAIN}/fullchain.pem","key_path":"/etc/letsencrypt/live/${DOMAIN}/privkey.pem"}},{"type":"hysteria2","tag":"hysteria2-in","listen":"::","listen_port":${HY2_PORT},"up_mbps":1000,"down_mbps":1000,"users":[],"tls":{"enabled":true,"certificate_path":"/etc/letsencrypt/live/${DOMAIN}/fullchain.pem","key_path":"/etc/letsencrypt/live/${DOMAIN}/privkey.pem"}},{"type":"shadowsocks","tag":"shadowsocks-in","listen":"::","listen_port":${SS_PORT},"method":"${SS_METHOD}","password":"${SS_PASSWORD}","users":[]}],"outbounds":[{"type":"direct","tag":"direct"},{"type":"block","tag":"block"}],"route":{"rules":[{"port":[53],"action":"hijack-dns"},{"action":"sniff"},{"action":"resolve","strategy":"ipv4_only"},{"ip_cidr":["::/0"],"outbound":"block"},{"ip_is_private":true,"outbound":"block"}],"final":"direct"},"experimental":{"clash_api":{"external_controller":"0.0.0.0:9090","secret":"${CLASH_API_SECRET}"},"v2ray_api":{"listen":"0.0.0.0:10085","stats":{"enabled":true,"users":[]}},"cache_file":{"enabled":true,"path":"/opt/sing-box/cache.db"}}}
-SINGBOX_CFG
+SINGBOX_TEMPLATE="$INSTALL_DIR/templates/sing-box.json.tpl"
+SINGBOX_CONFIG="/tmp/singbox-install-config.json"
+[[ -f "$SINGBOX_TEMPLATE" ]] || die "Missing sing-box template: $SINGBOX_TEMPLATE"
+
+rendered_config=$(<"$SINGBOX_TEMPLATE")
+replace_config_value() {
+    local name="$1" value="$2"
+    rendered_config=${rendered_config//"{{$name}}"/$value}
+}
+
+replace_config_value DOMAIN "$DOMAIN"
+replace_config_value VLESS_PORT "$VLESS_PORT"
+replace_config_value VMESS_PORT "$VMESS_PORT"
+replace_config_value TROJAN_PORT "$TROJAN_PORT"
+replace_config_value HYSTERIA2_PORT "$HY2_PORT"
+replace_config_value SHADOWSOCKS_PORT "$SS_PORT"
+replace_config_value REALITY_SERVER_NAME "$REALITY_SERVER_NAME"
+replace_config_value REALITY_PRIVATE_KEY "$REALITY_PRIVATE"
+replace_config_value REALITY_SHORT_ID "$REALITY_SHORT_ID"
+replace_config_value SHADOWSOCKS_METHOD "$SS_METHOD"
+replace_config_value SHADOWSOCKS_PASSWORD "$SS_PASSWORD"
+replace_config_value CLASH_API_SECRET "$CLASH_API_SECRET"
+
+printf '%s\n' "$rendered_config" > "$SINGBOX_CONFIG"
+if grep -qE '\{\{[A-Z0-9_]+\}\}' "$SINGBOX_CONFIG"; then
+    die "Unresolved value in sing-box template"
+fi
+
+info "Validating sing-box config..."
+if ! compose run --rm --no-deps \
+    -v "$SINGBOX_CONFIG:/tmp/config.json:ro" \
+    sing-box check -c /tmp/config.json; then
+    die "Generated sing-box config is invalid"
+fi
 
 docker volume create "${COMPOSE_SINGBOX_VOL}" >/dev/null 2>&1 || true
 docker run --rm \
     -v "${COMPOSE_SINGBOX_VOL}:/opt/sing-box" \
     -v "/tmp:/tmp" \
-    alpine sh -c "mkdir -p /opt/sing-box && cp /tmp/singbox-install-config.json /opt/sing-box/config.json && chown -R 1000:1000 /opt/sing-box"
+    alpine sh -c "mkdir -p /opt/sing-box && cp $SINGBOX_CONFIG /opt/sing-box/config.json && chown -R 1000:1000 /opt/sing-box"
 
 info "Starting all containers..."
 compose up -d --no-build

@@ -15,7 +15,7 @@ from api.depends import (
     is_valid_api_secret,
     verify_api_secret,
 )
-from api.routers import initialization, stats, sub, user
+from api.routers import stats, sub, user
 from api.schemas.system import (
     NodeAvailability,
     NodeHealthResponse,
@@ -184,7 +184,6 @@ async def log_requests(request: Request, call_next):
 # Register routers
 app.include_router(user.router)
 app.include_router(stats.router)
-app.include_router(initialization.router)
 
 # Optional subscription endpoint (enabled via SUBSCRIPTION_ENABLED=true in .env)
 app.include_router(sub.router)

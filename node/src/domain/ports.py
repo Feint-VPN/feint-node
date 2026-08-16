@@ -31,15 +31,6 @@ class IContainerRuntime(ABC):
     async def is_running(self) -> bool: ...
 
 
-class IStatsBackend(ABC):
-    """Query real-time traffic statistics."""
-
-    @abstractmethod
-    async def get_user_bytes(self, username: str) -> tuple[int, int]:
-        """Return (upload_bytes, download_bytes). Raise if unavailable."""
-        ...
-
-
 class IConfigUrlBuilder(ABC):
     """Generate protocol-specific client connection URLs."""
 

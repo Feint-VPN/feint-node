@@ -1,6 +1,31 @@
 """Regression checks for the root install.sh helper."""
 
+import json
+import re
 from pathlib import Path
+
+TEMPLATE = Path("../templates/sing-box.json.tpl")
+TEMPLATE_VALUES = {
+    "DOMAIN": "vpn.example.com",
+    "VLESS_PORT": "11001",
+    "VMESS_PORT": "11002",
+    "TROJAN_PORT": "11003",
+    "HYSTERIA2_PORT": "11004",
+    "SHADOWSOCKS_PORT": "11005",
+    "REALITY_SERVER_NAME": "www.microsoft.com",
+    "REALITY_PRIVATE_KEY": "private-key",
+    "REALITY_SHORT_ID": "0123456789abcdef",
+    "SHADOWSOCKS_METHOD": "2022-blake3-aes-256-gcm",
+    "SHADOWSOCKS_PASSWORD": "password",
+    "CLASH_API_SECRET": "clash-secret",
+}
+
+
+def render_template() -> dict:
+    content = TEMPLATE.read_text(encoding="utf-8")
+    for name, value in TEMPLATE_VALUES.items():
+        content = content.replace(f"{{{{{name}}}}}", value)
+    return json.loads(content)
 
 
 def test_install_script_uses_canonical_repository_and_branch():
@@ -45,7 +70,7 @@ def test_install_script_pulls_prebuilt_service_images():
     assert "compose up -d --no-build" in content, (
         "install.sh must start the prepared images"
     )
-    assert content.index("cp /tmp/singbox-install-config.json") < content.index(
+    assert content.index("cp $SINGBOX_CONFIG") < content.index(
         "compose up -d --no-build"
     ), "install.sh must write sing-box config before starting containers"
     assert "--no-cache" not in content, "install.sh must retain Docker layer caching"
@@ -63,9 +88,10 @@ def test_compose_uses_published_node_image():
     content = Path("../docker-compose.yml").read_text(encoding="utf-8")
 
     assert "image: ${NODE_IMAGE:-ghcr.io/feint-vpn/feint-node:latest}" in content
-    assert "build:" not in content.split("  vpn-node-api:", 1)[1].split(
-        "  sing-box:", 1
-    )[0]
+    assert (
+        "build:"
+        not in content.split("  vpn-node-api:", 1)[1].split("  sing-box:", 1)[0]
+    )
 
 
 def test_install_script_writes_stats_runtime_env_values():
@@ -85,12 +111,50 @@ def test_install_script_writes_stats_runtime_env_values():
 
 
 def test_install_script_generates_v2ray_stats_config():
-    script_path = Path("../install.sh")
-    content = script_path.read_text(encoding="utf-8")
+    config = render_template()
 
-    assert '"v2ray_api":{"listen":"0.0.0.0:10085"' in content, (
-        "install.sh must write the v2ray_api listener into config.json"
-    )
-    assert '"stats":{"enabled":true,"users":[]}' in content, (
-        "install.sh must enable per-user stats in config.json"
+    assert config["experimental"]["v2ray_api"] == {
+        "listen": "0.0.0.0:10085",
+        "stats": {"enabled": True, "users": []},
+    }
+
+
+def test_singbox_template_renders_the_existing_protocol_set():
+    config = render_template()
+    inbounds = {inbound["tag"]: inbound for inbound in config["inbounds"]}
+
+    assert set(inbounds) == {
+        "vless-reality-in",
+        "vmess-ws-in",
+        "trojan-in",
+        "hysteria2-in",
+        "shadowsocks-in",
+    }
+    assert [inbounds[tag]["listen_port"] for tag in inbounds] == [
+        11001,
+        11002,
+        11003,
+        11004,
+        11005,
+    ]
+
+
+def test_singbox_template_has_only_supported_placeholders():
+    content = TEMPLATE.read_text(encoding="utf-8")
+    placeholders = set(re.findall(r"\{\{([A-Z0-9_]+)\}\}", content))
+
+    assert placeholders == set(TEMPLATE_VALUES)
+
+
+def test_install_script_renders_and_validates_template_before_persisting():
+    content = Path("../install.sh").read_text(encoding="utf-8")
+
+    assert 'SINGBOX_TEMPLATE="$INSTALL_DIR/templates/sing-box.json.tpl"' in content
+    assert "replace_config_value VLESS_PORT" in content
+    assert "Unresolved value in sing-box template" in content
+    assert "sing-box check -c /tmp/config.json" in content
+    assert "Generated sing-box config is invalid" in content
+    assert "SINGBOX_CFG" not in content
+    assert content.index("sing-box check -c /tmp/config.json") < content.index(
+        "cp $SINGBOX_CONFIG"
     )

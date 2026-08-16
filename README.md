@@ -110,6 +110,8 @@ Requirements:
 The installer checks occupied and duplicated ports before changing the server.
 It reports the owning process and never terminates another service
 automatically.
+Before starting containers, it renders `templates/sing-box.json.tpl` with the
+generated ports and secrets and validates the result with `sing-box check`.
 
 ### Installer options
 
@@ -160,8 +162,6 @@ headers.
 | --- | --- | --- |
 | `GET` | `/health` | Cheap compatibility probe: `status` and `api_version`. |
 | `GET` | `/status` | Readiness of the config, sing-box and statistics, plus node telemetry. |
-| `POST` | `/secrets` | Generate node, Reality and Shadowsocks secrets. |
-| `POST` | `/initialize` | Run DNS, environment, config, certificate and container initialization. |
 
 ```bash
 curl -H "X-API-Secret: $API_SECRET" \
@@ -396,6 +396,7 @@ feint-node/
 │   └── requirements-dev.txt
 ├── scripts/              # Ports, firewall and deployment helpers
 ├── sing-box/             # Runtime image assets
+├── templates/            # Versioned sing-box configuration template
 ├── docker-compose.yml
 ├── install.sh
 ├── update.sh
@@ -424,7 +425,7 @@ The current contract is checked on Windows and Linux:
 - runtime import without development dependencies;
 - port, installer, updater and firewall regression tests.
 
-Current suite: **164 tests passing on Linux/Docker**.
+Current suite: **179 passing, 1 skipped**.
 
 ## License
 

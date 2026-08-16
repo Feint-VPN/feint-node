@@ -21,7 +21,7 @@ def client():
 
 
 class TestApplicationStartup:
-    """Tests for application startup and initialization."""
+    """Tests for application startup."""
 
     def test_app_starts_successfully(self, client):
         """Test that the application starts without errors."""
@@ -191,52 +191,6 @@ class TestRouterRegistration:
         # Should get 422 (not 404), indicating the route exists but header is missing
         assert response.status_code == 422
 
-    def test_initialization_router_registered(self, client):
-        """Test that initialization router is registered."""
-        # Try to access initialization endpoint without auth (should fail with 422 for missing header)
-        response = client.post(
-            "/initialize",
-            json={
-                "domain": "example.com",
-                "email": "admin@example.com",
-                "server_ip": "1.2.3.4",
-            },
-        )
-        # Should get 422 (not 404), indicating the route exists but header is missing
-        assert response.status_code == 422
-
-    def test_generate_secrets_uses_typed_contract(self, client):
-        from api.depends import get_init_service
-        from domain.initialization import NodeSecrets
-        from main import app
-
-        class StubInitService:
-            async def generate_secrets(self) -> NodeSecrets:
-                return NodeSecrets(
-                    api_secret="api-secret",
-                    reality_private_key="private-key",
-                    reality_public_key="public-key",
-                    reality_short_id="short-id",
-                    shadowsocks_password="shadowsocks-password",
-                )
-
-        app.dependency_overrides[get_init_service] = lambda: StubInitService()
-        try:
-            response = client.post(
-                "/secrets", headers={"X-API-Secret": "test-secret-key"}
-            )
-        finally:
-            app.dependency_overrides.pop(get_init_service, None)
-
-        assert response.status_code == 200
-        assert response.json() == {
-            "api_secret": "api-secret",
-            "reality_private_key": "private-key",
-            "reality_public_key": "public-key",
-            "reality_short_id": "short-id",
-            "shadowsocks_password": "shadowsocks-password",
-        }
-
     def test_user_router_with_invalid_auth(self, client):
         """Test that user router requires valid authentication."""
         response = client.post(
@@ -251,20 +205,6 @@ class TestRouterRegistration:
         """Test that stats router requires valid authentication."""
         response = client.get(
             "/user/testuser/stats",
-            headers={"X-API-Secret": "wrong-secret"},
-        )
-        # Should get 401 for invalid auth
-        assert response.status_code == 401
-
-    def test_initialization_router_with_invalid_auth(self, client):
-        """Test that initialization router requires valid authentication."""
-        response = client.post(
-            "/initialize",
-            json={
-                "domain": "example.com",
-                "email": "admin@example.com",
-                "server_ip": "1.2.3.4",
-            },
             headers={"X-API-Secret": "wrong-secret"},
         )
         # Should get 401 for invalid auth

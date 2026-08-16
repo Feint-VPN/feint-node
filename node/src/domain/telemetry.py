@@ -14,7 +14,3 @@ class NodeTelemetryStatus(BaseModel):
     configuration_available: bool
     user_count: int | None = Field(default=None, ge=0)
     protocols: list[NodeProtocolTelemetry] = Field(default_factory=list)
-
-
-class NodeTelemetrySnapshot(NodeTelemetryStatus):
-    cpu_load: int = Field(ge=-1, le=100)
