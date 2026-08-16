@@ -80,6 +80,8 @@ def test_install_script_waits_for_authenticated_status_before_success():
 
     assert "wait_for_status()" in content
     assert "X-API-Secret: ${API_SECRET}" in content
+    assert '"configuration":"available"' in content
+    assert '"sing_box":"running"' in content
     assert "127.0.0.1:${API_PORT}/status" in content
     assert content.index("wait_for_status()") < content.index(
         'header "🎉  Installation complete"'

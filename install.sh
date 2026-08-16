@@ -142,10 +142,13 @@ run() {
 }
 
 wait_for_status() {
-    local url="$1"
+    local url="$1" response
     for _ in {1..30}; do
-        curl -skf -H "X-API-Secret: ${API_SECRET}" "$url" \
-            | grep -q '"status":"ok"' && return 0
+        response="$(curl -skf -H "X-API-Secret: ${API_SECRET}" "$url" || true)"
+        if grep -q '"configuration":"available"' <<< "$response" \
+            && grep -q '"sing_box":"running"' <<< "$response"; then
+            return 0
+        fi
         sleep 1
     done
     return 1
