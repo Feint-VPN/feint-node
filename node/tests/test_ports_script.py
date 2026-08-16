@@ -39,3 +39,5 @@ def test_port_command_has_an_atomic_apply_path():
     assert "exec -T --user root vpn-node-api" in content
     assert "chown 1000:1000" in content
     assert "chmod 600" in content
+    assert 'handle.write("\\n")' in content
+    assert 'handle.write("\\\\n")' not in content

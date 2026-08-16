@@ -141,7 +141,7 @@ if missing:
     raise SystemExit("persisted config is missing inbounds: " + ", ".join(sorted(missing)))
 with tempfile.NamedTemporaryFile("w", dir=path.parent, delete=False) as handle:
     json.dump(config, handle, separators=(",", ":"))
-    handle.write("\\n")
+    handle.write("\n")
     temporary = pathlib.Path(handle.name)
 temporary.replace(path)
 PY
