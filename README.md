@@ -309,6 +309,7 @@ Runtime values live in `.env.local`. Start from [`.env.example`](.env.example).
 | `SUBSCRIPTION_ENABLED` | `false` | Enable `/sub/{username}`. |
 | `SUB_URI_TEMPLATE` | `🌌 Feint \| {Protocol}` | Display label for generated URIs. |
 | `NODE_IMAGE` | `ghcr.io/feint-vpn/feint-node:latest` | Published node API image. |
+| `SINGBOX_IMAGE` | `ghcr.io/feint-vpn/feint-sing-box:v1.13.12-feint.1` | Feint sing-box runtime image. |
 | `VLESS_PORT` | configurable | VLESS Reality listener. |
 | `VMESS_PORT` | configurable | VMess WebSocket listener. |
 | `TROJAN_PORT` | configurable | Trojan listener. |
@@ -340,10 +341,8 @@ uv sync --locked --extra dev
 Run quality checks:
 
 ```powershell
-uv run ruff format --check node/src node/tests
-uv run ruff check node/src node/tests
-cd node
-uv run pytest -q --no-cov
+uv run ruff format --check node/src
+uv run ruff check node/src
 ```
 
 Run the development container:
@@ -353,9 +352,9 @@ cp .env.example .env.local
 docker compose -f docker-compose.dev.yml --env-file .env.local up --build
 ```
 
-Production dependencies are in `node/requirements.txt`. Test and lint tools are
-isolated in `node/requirements-dev.txt` and the `dev` uv extra; they are not
-installed into the production image.
+Production dependencies are in `node/requirements.txt`. Lint tools are isolated
+in `node/requirements-dev.txt` and the `dev` uv extra; they are not installed
+into the production image.
 
 ## 🛸 Deployment operations
 
@@ -392,7 +391,6 @@ feint-node/
 │   │   ├── adapters/     # sing-box, Docker, traffic and URL implementations
 │   │   ├── utils/        # Settings, crypto and structured logging
 │   │   └── main.py       # Application and lifespan
-│   ├── tests/
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   └── requirements-dev.txt

@@ -103,6 +103,13 @@ if port_check_tool_available; then
         else
             warn "$key $port/$protocol has no visible host listener"
         fi
+        if [[ "$key" == SHADOWSOCKS_PORT ]]; then
+            if port_is_in_use udp "$port"; then
+                ok "$key $port/udp is listening"
+            else
+                warn "$key $port/udp has no visible host listener"
+            fi
+        fi
     done
 else
     warn 'Install iproute2 or net-tools to inspect listeners'

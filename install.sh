@@ -42,6 +42,8 @@ API_PORT="8337"
 INSTALL_DIR="/opt/vpn-node"
 SUB_ENABLED="true"
 BRANCH="main"
+NODE_IMAGE="ghcr.io/feint-vpn/feint-node:latest"
+SINGBOX_IMAGE="ghcr.io/feint-vpn/feint-sing-box:v1.13.12-feint.1"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -141,6 +143,20 @@ run() {
     "$@" 2>&1 | sed 's/^/  │ /'
 }
 
+wait_for_runtime() {
+    local url="$1"
+    local response
+    for _ in {1..30}; do
+        response="$(curl -skf -H "X-API-Secret: ${API_SECRET}" "$url" || true)"
+        if grep -q '"configuration":"available"' <<< "$response" \
+            && grep -q '"sing_box":"running"' <<< "$response"; then
+            return 0
+        fi
+        sleep 1
+    done
+    return 1
+}
+
 wait_for_status() {
     local url="$1"
     for _ in {1..30}; do
@@ -223,46 +239,10 @@ fi
 # Generate all cryptographic material locally
 #   Reality x25519 key pair — use sing-box container for guaranteed format
 info "Generating x25519 key pair for Reality..."
-KEYGEN_OUT=""
-# Preferred: use sing-box Docker image (same format the server expects)
-if command -v docker &>/dev/null; then
-    KEYGEN_OUT=$(docker run --rm ghcr.io/sagernet/sing-box:v1.13.12 \
-        generate reality-keypair 2>/dev/null || true)
-fi
-# Fallback: host sing-box binary
-if [[ -z "$KEYGEN_OUT" ]] && command -v sing-box &>/dev/null; then
-    KEYGEN_OUT=$(sing-box generate reality-keypair 2>/dev/null || true)
-fi
-REALITY_PRIVATE=$(echo "$KEYGEN_OUT" | grep PrivateKey | awk '{print $2}' || true)
-REALITY_PUBLIC=$(echo "$KEYGEN_OUT"  | grep PublicKey  | awk '{print $2}' || true)
-
-if [[ -z "${REALITY_PRIVATE:-}" ]]; then
-    # Fallback: openssl X25519 — extract ALL hex lines then base64url-encode
-    REALITY_PRIVATE_HEX=$(openssl genpkey -algorithm X25519 2>/dev/null \
-        | openssl pkey -outform DER 2>/dev/null \
-        | tail -c 32 | xxd -p | tr -d '\n' || true)
-    if [[ -n "$REALITY_PRIVATE_HEX" ]]; then
-        REALITY_PRIVATE=$(python3 -c "
-import base64, binascii
-b = binascii.unhexlify('${REALITY_PRIVATE_HEX}')
-print(base64.urlsafe_b64encode(b).decode().rstrip('='))
-")
-    else
-        # Ultimate fallback: 32 random bytes base64url-encoded
-        REALITY_PRIVATE=$(openssl rand 32 | base64 | tr '+/' '-_' | tr -d '=\n')
-    fi
-    # Derive public key via Python
-    REALITY_PUBLIC=$(python3 -c "
-import base64
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
-priv = '${REALITY_PRIVATE}'
-padded = priv + '=' * (-len(priv) % 4)
-key = X25519PrivateKey.from_private_bytes(base64.urlsafe_b64decode(padded))
-pub = key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
-print(base64.urlsafe_b64encode(pub).decode().rstrip('='))
-" 2>/dev/null || echo "")
-fi
+KEYGEN_OUT="$(docker run --rm "$SINGBOX_IMAGE" generate reality-keypair)" \
+    || die "Could not generate Reality keys with $SINGBOX_IMAGE"
+REALITY_PRIVATE="$(awk '$1 == "PrivateKey:" { print $2; exit }' <<< "$KEYGEN_OUT")"
+[[ -n "$REALITY_PRIVATE" ]] || die "sing-box returned no Reality private key"
 
 REALITY_SHORT_ID=$(openssl rand -hex 8)
 
@@ -279,7 +259,7 @@ VLESS_PORT=$(port_find_free_unique tcp 10000 60000 "$API_PORT") || die "Could no
 VMESS_PORT=$(port_find_free_unique tcp 10000 60000 "$API_PORT" "$VLESS_PORT") || die "Could not find a free VMess TCP port"
 TROJAN_PORT=$(port_find_free_unique tcp 10000 60000 "$API_PORT" "$VLESS_PORT" "$VMESS_PORT") || die "Could not find a free Trojan TCP port"
 HY2_PORT=$(port_find_free_unique udp 10000 60000) || die "Could not find a free Hysteria2 UDP port"
-SS_PORT=$(port_find_free_unique tcp 10000 60000 "$API_PORT" "$VLESS_PORT" "$VMESS_PORT" "$TROJAN_PORT") || die "Could not find a free Shadowsocks TCP port"
+SS_PORT=$(port_find_free_both 10000 60000 "$API_PORT" "$VLESS_PORT" "$VMESS_PORT" "$TROJAN_PORT" "$HY2_PORT") || die "Could not find a free Shadowsocks TCP/UDP port"
 
 # Detect public IP
 SERVER_IP=$(curl -4sSf https://api.ipify.org 2>/dev/null \
@@ -344,6 +324,8 @@ LOG_LEVEL=info
 LOG_FORMAT=json
 
 # Docker
+NODE_IMAGE=${NODE_IMAGE}
+SINGBOX_IMAGE=${SINGBOX_IMAGE}
 DOCKER_SOCKET=/var/run/docker.sock
 DOCKER_GID=${DOCKER_GID}
 SINGBOX_CONTAINER_NAME=sing-box
@@ -455,7 +437,7 @@ fi
 info "Validating sing-box config..."
 if ! compose run --rm --no-deps \
     -v "$SINGBOX_CONFIG:/tmp/config.json:ro" \
-    sing-box check -c /tmp/config.json; then
+    sing-box check -c /tmp/config.json </dev/null; then
     die "Generated sing-box config is invalid"
 fi
 
@@ -471,9 +453,10 @@ compose up -d --no-build
 info "Waiting for VPN services to start..."
 STATUS_SCHEME=https
 [[ "$(env_get API_USE_SSL "$ENV_FILE" true)" == true ]] || STATUS_SCHEME=http
-wait_for_status "${STATUS_SCHEME}://127.0.0.1:${API_PORT}/status" \
-    || die "Containers started, but the authenticated API status check failed"
-success "API status is healthy"
+STATUS_URL="${STATUS_SCHEME}://127.0.0.1:${API_PORT}/status"
+wait_for_runtime "$STATUS_URL" \
+    || die "Containers started, but configuration or sing-box is unavailable"
+success "Node runtime is ready"
 
 # ── MTU TCPMSS clamp (fix for providers with reduced path MTU) ────────────────
 info "Applying MTU TCPMSS clamp for NAT forwarding..."
@@ -496,6 +479,12 @@ if dpkg -s iptables-persistent >/dev/null 2>&1; then
 else
     warn "Could not install iptables-persistent — MTU clamp will not persist across reboot."
 fi
+
+header "Secure host"
+bash "$INSTALL_DIR/scripts/setup-firewall.sh" --dir "$INSTALL_DIR"
+wait_for_status "$STATUS_URL" \
+    || die "Host was secured, but the complete node status is not healthy"
+success "API status is healthy"
 
 # ── summary ───────────────────────────────────────────────────────────────────
 header "🎉  Installation complete"

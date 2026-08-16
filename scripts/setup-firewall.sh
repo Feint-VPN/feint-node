@@ -39,6 +39,7 @@ command -v sshd >/dev/null || die "sshd is required"
 command -v systemctl >/dev/null || die "systemd is required"
 
 source "$INSTALL_DIR/scripts/lib/ports.sh"
+source "$INSTALL_DIR/scripts/lib/firewall.sh"
 port_check_tool_available || die "Port checks require iproute2 (ss)"
 port_require_unique_config "$ENV_FILE" || exit 1
 
@@ -49,11 +50,7 @@ TROJAN_PORT="$(env_get TROJAN_PORT "$ENV_FILE")"
 HYSTERIA2_PORT="$(env_get HYSTERIA2_PORT "$ENV_FILE")"
 SHADOWSOCKS_PORT="$(env_get SHADOWSOCKS_PORT "$ENV_FILE")"
 command -v docker >/dev/null || die "Docker is required"
-DOCKER_NETWORK_ID="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.NetworkID}}{{end}}' vpn-node-api 2>/dev/null)"
-[[ "$DOCKER_NETWORK_ID" =~ ^[a-f0-9]{64}$ ]] || die "vpn-node-api must be running before firewall setup"
-DOCKER_BRIDGE="br-${DOCKER_NETWORK_ID:0:12}"
-DOCKER_SUBNET="$(docker network inspect "$DOCKER_NETWORK_ID" --format '{{(index .IPAM.Config 0).Subnet}}')"
-[[ -n "$DOCKER_SUBNET" ]] || die "Could not determine the Feint Docker subnet"
+docker inspect vpn-node-api >/dev/null 2>&1 || die "vpn-node-api must be running before firewall setup"
 ssh_connection="${SSH_CONNECTION:-}"
 OLD_SSH_PORT="${ssh_connection##* }"
 if ! port_validate "$OLD_SSH_PORT"; then
@@ -110,27 +107,6 @@ restart_ssh() {
     fi
 }
 
-configure_firewall() {
-    local ssh_port="$1" transition_port="${2:-}"
-    ufw --force reset >/dev/null
-    ufw default deny incoming
-    ufw default deny routed
-    ufw default allow outgoing
-    ufw allow "$ssh_port/tcp" comment 'Feint SSH'
-    [[ -z "$transition_port" ]] || ufw allow "$transition_port/tcp" comment 'Feint SSH transition'
-    ufw allow 80/tcp comment 'Feint ACME'
-    ufw allow "$API_PORT/tcp" comment 'Feint API'
-    ufw allow "$VLESS_PORT/tcp" comment 'Feint VLESS'
-    ufw allow "$VMESS_PORT/tcp" comment 'Feint VMess'
-    ufw allow "$TROJAN_PORT/tcp" comment 'Feint Trojan'
-    ufw allow "$HYSTERIA2_PORT/udp" comment 'Feint Hysteria2'
-    ufw allow "$SHADOWSOCKS_PORT/tcp" comment 'Feint Shadowsocks'
-    ufw allow "$SHADOWSOCKS_PORT/udp" comment 'Feint Shadowsocks'
-    ufw allow in on "$DOCKER_BRIDGE" from "$DOCKER_SUBNET" to any port 9090 proto tcp comment 'Feint Clash API internal'
-    ufw allow in on "$DOCKER_BRIDGE" from "$DOCKER_SUBNET" to any port 10085 proto tcp comment 'Feint V2Ray API internal'
-    ufw --force enable >/dev/null
-}
-
 restore_ssh() {
     rm -f "$SSH_DROPIN"
     tar -C / -xpf "$SSH_BACKUP"
@@ -144,7 +120,7 @@ rollback() {
     set +e
     error "Firewall setup failed; restoring SSH on port $OLD_SSH_PORT"
     [[ "$SSH_CHANGED" == false ]] || restore_ssh
-    [[ "$FIREWALL_CHANGED" == false ]] || configure_firewall "$OLD_SSH_PORT"
+    [[ "$FIREWALL_CHANGED" == false ]] || firewall_apply "$ENV_FILE" "$OLD_SSH_PORT"
     restart_ssh
     exit "$status"
 }
@@ -170,7 +146,7 @@ fi
 
 info "Closing host ports outside the Feint allowlist"
 FIREWALL_CHANGED=true
-configure_firewall "$NEW_SSH_PORT" "$OLD_SSH_PORT"
+firewall_apply "$ENV_FILE" "$NEW_SSH_PORT" "$OLD_SSH_PORT"
 restart_ssh
 
 for _ in {1..10}; do
@@ -186,7 +162,7 @@ warn "Keep this terminal open. In a second terminal, connect with:"
 echo "  ssh -p $NEW_SSH_PORT <user>@<server>"
 echo
 printf 'Type CONFIRM after the new SSH session works: '
-read -r confirmation
+read -r confirmation </dev/tty
 if [[ "$confirmation" != CONFIRM ]]; then
     error "The new SSH connection was not confirmed"
     false
