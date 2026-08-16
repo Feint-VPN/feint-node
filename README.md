@@ -8,10 +8,7 @@
 
 `feint-node` is the small service installed beside one sing-box runtime. It
 manages protocol users, produces connection URLs, tracks traffic and exposes a
-stable API contract to [`feint-sdk`](../feint-sdk).
-
-The node does not own global users, wallets, billing or subscription policy.
-Those remain in the core SDK. This repository owns only the local sing-box
+stable authenticated HTTP API. This repository owns the local sing-box
 configuration and the runtime state of one server. 👾
 
 ## 🌌 Contents
@@ -37,7 +34,7 @@ configuration and the runtime state of one server. 👾
 The runtime has one active implementation path:
 
 ```text
-Feint SDK / maintainer
+Authenticated API request
           │
           ▼
      FastAPI contract
@@ -66,9 +63,6 @@ The node is authoritative for:
 - local traffic counters and runtime telemetry;
 - certificate, port and container configuration for this server.
 
-The Feint core remains authoritative for global identity, access state,
-wallets, billing, subscriptions and distribution across multiple nodes.
-
 ### Atomic mutations
 
 Creating or deleting a user follows one transaction-like flow:
@@ -92,7 +86,7 @@ Creating or deleting a user follows one transaction-like flow:
 
 One local user is added to every configured protocol. Protocol names returned
 by runtime telemetry are intentionally strings because sing-box capabilities
-may change independently of the SDK.
+may change independently of the node API.
 
 ## 🌙 Installation
 
@@ -193,7 +187,7 @@ Example response:
 
 `status` is `degraded` when the configuration cannot be read, the sing-box
 container is stopped, or live statistics are unavailable. The endpoint still
-returns the state of every component so the maintainer can identify the failed
+returns the state of every component so an operator can identify the failed
 part without additional probes.
 
 ### Users
@@ -207,7 +201,7 @@ part without additional probes.
 | `GET` | `/user/{username}/configs?server_domain=...` | Build protocol URLs. |
 
 Usernames contain `3-50` ASCII letters, digits, `_` or `-`. A UUID and password
-may be supplied by the maintainer; otherwise the node generates them.
+may be supplied in the request; otherwise the node generates them.
 
 ### Statistics
 
@@ -236,8 +230,6 @@ curl -X POST https://vpn.example.com:8337/user \
 ```
 
 The response contains the generated UUID, password and installed protocols.
-The Feint SDK stores the resulting node-user credentials and uses them while
-building the global subscription.
 
 Delete a user:
 
@@ -252,9 +244,8 @@ counters on a best-effort basis.
 
 ## 🌌 Subscriptions
 
-The node can produce a Hiddify-compatible Base64 payload, but this is optional.
-The main Feint subscription is normally assembled by the maintainer from all
-nodes.
+The node can optionally produce a Hiddify-compatible Base64 payload from its
+locally configured protocols.
 
 ```bash
 curl https://vpn.example.com:8337/sub/username
@@ -308,7 +299,7 @@ Runtime values live in `.env.local`. Start from [`.env.example`](.env.example).
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `API_SECRET` | unsafe placeholder | Shared maintainer secret; must be replaced. |
+| `API_SECRET` | unsafe placeholder | Node API secret; must be replaced. |
 | `API_PORT` | `8000` | API listener and Compose port. |
 | `HIDE_ENDPOINTS` | `true` | Hide every route from unauthenticated callers. |
 | `DEV_MODE` | `false` | Enable docs and run uvicorn without TLS. |
@@ -417,11 +408,10 @@ There is no parallel legacy router or service tree. `api`, `domain` and
 ## 🌑 Current boundaries
 
 - Authentication is a shared node secret, not user Bearer/JWT authentication.
-- The node has no wallet, billing, global subscription or profile model.
-- `/sub/{username}` is optional; cross-node subscriptions belong to the maintainer.
+- `/sub/{username}` is an optional local subscription endpoint.
 - Let's Encrypt installation currently uses the standalone HTTP challenge.
 - sing-box is controlled through the mounted Docker socket.
-- Traffic totals are local operational state, not billing authority.
+- Traffic totals are persisted as local operational state.
 
 ## ✅ Quality
 

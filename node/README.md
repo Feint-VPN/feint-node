@@ -71,7 +71,7 @@ mounted Docker socket.
 ## 🔮 Contract
 
 The public runtime contract is versioned independently through
-`api.contract.API_VERSION`. The maintainer uses:
+`api.contract.API_VERSION`. API clients use:
 
 - `/health` for a cheap compatibility probe;
 - `/status` for config, sing-box and statistics readiness plus node telemetry;

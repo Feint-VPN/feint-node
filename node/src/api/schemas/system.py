@@ -33,7 +33,7 @@ class NodeHealthResponse(BaseModel):
 
 
 class NodeStatusResponse(BaseModel):
-    """Authenticated runtime details consumed by the maintainer SDK."""
+    """Authenticated node runtime details."""
 
     status: NodeStatus
     api_version: str = Field(pattern=r"^[1-9]\d*\.\d+$")
