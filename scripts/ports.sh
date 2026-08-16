@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Change deployed ports without editing Compose or sing-box JSON by hand.
 set -euo pipefail
+exec </dev/null
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/ports.sh"
