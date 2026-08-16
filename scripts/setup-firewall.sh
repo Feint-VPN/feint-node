@@ -186,7 +186,7 @@ warn "Keep this terminal open. In a second terminal, connect with:"
 echo "  ssh -p $NEW_SSH_PORT <user>@<server>"
 echo
 printf 'Type CONFIRM after the new SSH session works: '
-read -r confirmation
+read -r confirmation </dev/tty
 if [[ "$confirmation" != CONFIRM ]]; then
     error "The new SSH connection was not confirmed"
     false

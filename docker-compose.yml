@@ -38,7 +38,7 @@ services:
     volumes:
       - sing-box-data:/opt/sing-box
       - certbot-certs:/etc/letsencrypt:ro
-    command: run -c /opt/sing-box/config.json
+    command: run -c ${CONFIG_PATH:-/opt/sing-box/config.json}
     restart: unless-stopped
 
   certbot:

@@ -47,6 +47,7 @@ cd "$INSTALL_DIR"
 ENV_FILE="$INSTALL_DIR/.env.local"
 source "$INSTALL_DIR/scripts/lib/ports.sh"
 COMPOSE=(docker compose --env-file "$ENV_FILE" -f "$INSTALL_DIR/docker-compose.yml")
+CONFIG_PATH="$(env_get CONFIG_PATH "$ENV_FILE" /opt/sing-box/config.json)"
 
 detect_branch() {
     git symbolic-ref --quiet --short HEAD 2>/dev/null \
@@ -57,8 +58,9 @@ detect_branch() {
 wait_for_status() {
     local scheme=http
     [[ "$(env_get API_USE_SSL "$ENV_FILE" true)" == true ]] && scheme=https
-    local url="${scheme}://127.0.0.1:$(env_get API_PORT "$ENV_FILE" 8337)/status"
-    local secret="$(env_get API_SECRET "$ENV_FILE")"
+    local url secret
+    url="${scheme}://127.0.0.1:$(env_get API_PORT "$ENV_FILE" 8337)/status"
+    secret="$(env_get API_SECRET "$ENV_FILE")"
     for _ in {1..60}; do
         if curl -skf -H "X-API-Secret: ${secret}" "$url" \
             | grep -q '"status":"ok"'; then
@@ -85,9 +87,9 @@ rollback() {
     restore_image "$OLD_SINGBOX_IMAGE" "$SINGBOX_IMAGE"
     restore_image "$OLD_CERTBOT_IMAGE" "$CERTBOT_IMAGE"
     "${COMPOSE[@]}" up -d --no-build --remove-orphans
-    "${COMPOSE[@]}" cp "$CONFIG_BACKUP" "vpn-node-api:${CONFIG_PATH:-/opt/sing-box/config.json}"
+    "${COMPOSE[@]}" cp "$CONFIG_BACKUP" "vpn-node-api:$CONFIG_PATH"
     "${COMPOSE[@]}" exec -T --user root vpn-node-api sh -c \
-        "chown 1000:1000 '${CONFIG_PATH:-/opt/sing-box/config.json}' && chmod 600 '${CONFIG_PATH:-/opt/sing-box/config.json}'"
+        "chown 1000:1000 '$CONFIG_PATH' && chmod 600 '$CONFIG_PATH'"
     "${COMPOSE[@]}" restart sing-box
     if wait_for_status; then
         success "Previous deployment restored"
@@ -102,13 +104,11 @@ sync_template() {
     "${COMPOSE[@]}" cp "$INSTALL_DIR/scripts/sync-singbox.py" "vpn-node-api:$helper"
     "${COMPOSE[@]}" cp "$INSTALL_DIR/templates/sing-box.json.tpl" "vpn-node-api:$template"
     "${COMPOSE[@]}" exec -T vpn-node-api python "$helper" \
-        "$template" "${CONFIG_PATH:-/opt/sing-box/config.json}" \
-        "${CONFIG_PATH:-/opt/sing-box/config.json}.next"
+        "$template" "$CONFIG_PATH" "$CONFIG_PATH.next"
     "${COMPOSE[@]}" exec -T sing-box sing-box check \
-        -c "${CONFIG_PATH:-/opt/sing-box/config.json}.next"
+        -c "$CONFIG_PATH.next"
     "${COMPOSE[@]}" exec -T vpn-node-api mv \
-        "${CONFIG_PATH:-/opt/sing-box/config.json}.next" \
-        "${CONFIG_PATH:-/opt/sing-box/config.json}"
+        "$CONFIG_PATH.next" "$CONFIG_PATH"
     "${COMPOSE[@]}" restart sing-box
 }
 
@@ -128,7 +128,7 @@ ENV_BACKUP="$(mktemp "${ENV_FILE}.update.XXXXXX")"
 CONFIG_BACKUP="$(mktemp "${ENV_FILE}.config.XXXXXX")"
 cp "$ENV_FILE" "$ENV_BACKUP"
 "${COMPOSE[@]}" exec -T vpn-node-api cat \
-    "${CONFIG_PATH:-/opt/sing-box/config.json}" > "$CONFIG_BACKUP"
+    "$CONFIG_PATH" > "$CONFIG_BACKUP"
 
 NODE_IMAGE="$(env_get NODE_IMAGE "$ENV_FILE" ghcr.io/feint-vpn/feint-node:latest)"
 SINGBOX_IMAGE="$(env_get SINGBOX_IMAGE "$ENV_FILE" ghcr.io/feint-vpn/feint-sing-box:v1.13.12-feint.1)"

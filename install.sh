@@ -143,6 +143,20 @@ run() {
     "$@" 2>&1 | sed 's/^/  │ /'
 }
 
+wait_for_runtime() {
+    local url="$1"
+    local response
+    for _ in {1..30}; do
+        response="$(curl -skf -H "X-API-Secret: ${API_SECRET}" "$url" || true)"
+        if grep -q '"configuration":"available"' <<< "$response" \
+            && grep -q '"sing_box":"running"' <<< "$response"; then
+            return 0
+        fi
+        sleep 1
+    done
+    return 1
+}
+
 wait_for_status() {
     local url="$1"
     for _ in {1..30}; do
@@ -225,46 +239,10 @@ fi
 # Generate all cryptographic material locally
 #   Reality x25519 key pair — use sing-box container for guaranteed format
 info "Generating x25519 key pair for Reality..."
-KEYGEN_OUT=""
-# Preferred: use the same Feint sing-box image that the node will run.
-if command -v docker &>/dev/null; then
-    KEYGEN_OUT=$(docker run --rm "$SINGBOX_IMAGE" \
-        generate reality-keypair 2>/dev/null || true)
-fi
-# Fallback: host sing-box binary
-if [[ -z "$KEYGEN_OUT" ]] && command -v sing-box &>/dev/null; then
-    KEYGEN_OUT=$(sing-box generate reality-keypair 2>/dev/null || true)
-fi
-REALITY_PRIVATE=$(echo "$KEYGEN_OUT" | grep PrivateKey | awk '{print $2}' || true)
-REALITY_PUBLIC=$(echo "$KEYGEN_OUT"  | grep PublicKey  | awk '{print $2}' || true)
-
-if [[ -z "${REALITY_PRIVATE:-}" ]]; then
-    # Fallback: openssl X25519 — extract ALL hex lines then base64url-encode
-    REALITY_PRIVATE_HEX=$(openssl genpkey -algorithm X25519 2>/dev/null \
-        | openssl pkey -outform DER 2>/dev/null \
-        | tail -c 32 | xxd -p | tr -d '\n' || true)
-    if [[ -n "$REALITY_PRIVATE_HEX" ]]; then
-        REALITY_PRIVATE=$(python3 -c "
-import base64, binascii
-b = binascii.unhexlify('${REALITY_PRIVATE_HEX}')
-print(base64.urlsafe_b64encode(b).decode().rstrip('='))
-")
-    else
-        # Ultimate fallback: 32 random bytes base64url-encoded
-        REALITY_PRIVATE=$(openssl rand 32 | base64 | tr '+/' '-_' | tr -d '=\n')
-    fi
-    # Derive public key via Python
-    REALITY_PUBLIC=$(python3 -c "
-import base64
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
-priv = '${REALITY_PRIVATE}'
-padded = priv + '=' * (-len(priv) % 4)
-key = X25519PrivateKey.from_private_bytes(base64.urlsafe_b64decode(padded))
-pub = key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
-print(base64.urlsafe_b64encode(pub).decode().rstrip('='))
-" 2>/dev/null || echo "")
-fi
+KEYGEN_OUT="$(docker run --rm "$SINGBOX_IMAGE" generate reality-keypair)" \
+    || die "Could not generate Reality keys with $SINGBOX_IMAGE"
+REALITY_PRIVATE="$(awk '$1 == "PrivateKey:" { print $2; exit }' <<< "$KEYGEN_OUT")"
+[[ -n "$REALITY_PRIVATE" ]] || die "sing-box returned no Reality private key"
 
 REALITY_SHORT_ID=$(openssl rand -hex 8)
 
@@ -475,9 +453,10 @@ compose up -d --no-build
 info "Waiting for VPN services to start..."
 STATUS_SCHEME=https
 [[ "$(env_get API_USE_SSL "$ENV_FILE" true)" == true ]] || STATUS_SCHEME=http
-wait_for_status "${STATUS_SCHEME}://127.0.0.1:${API_PORT}/status" \
-    || die "Containers started, but the authenticated API status check failed"
-success "API status is healthy"
+STATUS_URL="${STATUS_SCHEME}://127.0.0.1:${API_PORT}/status"
+wait_for_runtime "$STATUS_URL" \
+    || die "Containers started, but configuration or sing-box is unavailable"
+success "Node runtime is ready"
 
 # ── MTU TCPMSS clamp (fix for providers with reduced path MTU) ────────────────
 info "Applying MTU TCPMSS clamp for NAT forwarding..."
@@ -500,6 +479,12 @@ if dpkg -s iptables-persistent >/dev/null 2>&1; then
 else
     warn "Could not install iptables-persistent — MTU clamp will not persist across reboot."
 fi
+
+header "Secure host"
+"$INSTALL_DIR/scripts/setup-firewall.sh" --dir "$INSTALL_DIR"
+wait_for_status "$STATUS_URL" \
+    || die "Host was secured, but the complete node status is not healthy"
+success "API status is healthy"
 
 # ── summary ───────────────────────────────────────────────────────────────────
 header "🎉  Installation complete"

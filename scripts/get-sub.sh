@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
-# get-sub.sh — Fetch a Hiddify-compatible subscription URL for a VPN user.
+# get-sub.sh — Fetch and decode a node subscription for a VPN user.
 #
 # Usage:
 #   ./scripts/get-sub.sh <username>
 #   ./scripts/get-sub.sh <username> <server_domain_override>
 #
-# The script reads SERVER_DOMAIN and API_PORT from .env.local.
-# The returned payload is base64-encoded; pass it to Hiddify as a subscription URL,
-# or decode it locally to see the raw proxy URIs.
+# The node endpoint is authenticated. This helper reads the secret from
+# .env.local and prints the decoded proxy URIs for inspection.
 #
 # Example:
 #   ./scripts/get-sub.sh alice
@@ -15,7 +14,8 @@
 #
 set -euo pipefail
 
-ENV_FILE="${ENV_FILE:-.env.local}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="${ENV_FILE:-$SCRIPT_DIR/../.env.local}"
 
 if [[ ! -f "$ENV_FILE" ]]; then
     echo "Error: env file '$ENV_FILE' not found." >&2
@@ -31,7 +31,9 @@ _get_env() {
 API_SECRET="$(_get_env API_SECRET)"
 SERVER_DOMAIN="$(_get_env SERVER_DOMAIN)"
 API_PORT="$(_get_env API_PORT || true)"
-API_PORT="${API_PORT:-8000}"
+API_PORT="${API_PORT:-8337}"
+API_USE_SSL="$(_get_env API_USE_SSL || true)"
+API_USE_SSL="${API_USE_SSL:-true}"
 SUB_ENABLED="$(_get_env SUBSCRIPTION_ENABLED || true)"
 SUB_ENABLED="${SUB_ENABLED:-false}"
 
@@ -54,8 +56,14 @@ if [[ -z "$SERVER_DOMAIN" ]]; then
     echo "Error: SERVER_DOMAIN not found in $ENV_FILE." >&2
     exit 1
 fi
+if [[ -z "$API_SECRET" ]]; then
+    echo "Error: API_SECRET not found in $ENV_FILE." >&2
+    exit 1
+fi
 
-SUB_URL="https://${SERVER_DOMAIN}:${API_PORT}/sub/${USERNAME}"
+SCHEME=http
+[[ "$API_USE_SSL" == true ]] && SCHEME=https
+SUB_URL="${SCHEME}://${SERVER_DOMAIN}:${API_PORT}/sub/${USERNAME}"
 if [[ -n "$DOMAIN_OVERRIDE" ]]; then
     SUB_URL="${SUB_URL}?server_domain=${DOMAIN_OVERRIDE}"
 fi
@@ -66,10 +74,10 @@ echo "========================================="
 echo "User:   $USERNAME"
 echo "Domain: $DISPLAY_DOMAIN"
 echo ""
-echo "Subscription URL (add to Hiddify):"
+echo "Authenticated node endpoint:"
 echo "  $SUB_URL"
 echo "========================================="
 echo ""
 echo "Decoded proxy URIs:"
-curl -fsSL "$SUB_URL" | base64 -d
+curl -fsSL -H "X-API-Secret: ${API_SECRET}" "$SUB_URL" | base64 -d
 echo ""

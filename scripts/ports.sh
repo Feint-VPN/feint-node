@@ -10,7 +10,6 @@ ENV_FILE="$INSTALL_DIR/.env.local"
 COMMAND="${1:-show}"
 [[ $# -gt 0 ]] && shift
 APPLY=false
-RANDOMIZE=false
 declare -A REQUESTED=()
 
 die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
@@ -56,6 +55,7 @@ done
 [[ -f "$ENV_FILE" ]] || die "Missing deployed configuration: $ENV_FILE"
 port_check_tool_available || die "Port checks require iproute2 (ss) or net-tools (netstat)"
 COMPOSE=(docker compose --env-file "$ENV_FILE" -f "$INSTALL_DIR/docker-compose.yml")
+CONFIG_PATH="$(env_get CONFIG_PATH "$ENV_FILE" /opt/sing-box/config.json)"
 
 show_ports() {
     local file="${1:-$ENV_FILE}" key value protocol
@@ -150,8 +150,9 @@ PY
 wait_for_status() {
     local scheme=http response=""
     [[ "$(env_get API_USE_SSL "$ENV_FILE" true)" == true ]] && scheme=https
-    local url="${scheme}://127.0.0.1:$(env_get API_PORT "$ENV_FILE")/status"
-    local api_secret="$(env_get API_SECRET "$ENV_FILE")"
+    local url api_secret
+    url="${scheme}://127.0.0.1:$(env_get API_PORT "$ENV_FILE")/status"
+    api_secret="$(env_get API_SECRET "$ENV_FILE")"
     for _ in {1..60}; do
         response="$(curl -skf -H "X-API-Secret: ${api_secret}" "$url" || true)"
         if grep -q '"status":"ok"' <<< "$response"; then
@@ -167,9 +168,9 @@ restore_ports() {
     local env_backup="$1" config_backup="$2" failed=false
     cp "$env_backup" "$ENV_FILE" || failed=true
     "${COMPOSE[@]}" up -d --force-recreate vpn-node-api || failed=true
-    "${COMPOSE[@]}" cp "$config_backup" "vpn-node-api:${CONFIG_PATH:-/opt/sing-box/config.json}" || failed=true
+    "${COMPOSE[@]}" cp "$config_backup" "vpn-node-api:$CONFIG_PATH" || failed=true
     "${COMPOSE[@]}" exec -T --user root vpn-node-api sh -c \
-        "chown 1000:1000 '${CONFIG_PATH:-/opt/sing-box/config.json}' && chmod 600 '${CONFIG_PATH:-/opt/sing-box/config.json}'" || failed=true
+        "chown 1000:1000 '$CONFIG_PATH' && chmod 600 '$CONFIG_PATH'" || failed=true
     "${COMPOSE[@]}" restart sing-box || failed=true
     [[ "$failed" == false ]]
 }
@@ -180,7 +181,7 @@ apply_ports() {
     env_backup="$(mktemp "${ENV_FILE}.backup.XXXXXX")"
     config_backup="$(mktemp "${ENV_FILE}.config.XXXXXX")"
     cp "$ENV_FILE" "$env_backup"
-    "${COMPOSE[@]}" exec -T vpn-node-api cat "${CONFIG_PATH:-/opt/sing-box/config.json}" > "$config_backup"
+    "${COMPOSE[@]}" exec -T vpn-node-api cat "$CONFIG_PATH" > "$config_backup"
     if ! cp "$staged" "$ENV_FILE" \
         || ! "${COMPOSE[@]}" up -d --force-recreate vpn-node-api \
         || ! render_singbox_ports \
