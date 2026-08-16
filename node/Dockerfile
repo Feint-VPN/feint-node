@@ -2,7 +2,7 @@
 FROM python:3.11-slim
 
 # Metadata labels for GitHub Container Registry
-LABEL org.opencontainers.image.source="https://github.com/Feint-VPN/node"
+LABEL org.opencontainers.image.source="https://github.com/Feint-VPN/feint-node"
 LABEL org.opencontainers.image.description="Feint VPN Node API - Automated VPN node management with sing-box"
 LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.title="Feint VPN Node"

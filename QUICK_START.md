@@ -9,7 +9,7 @@ Get a fully working 5-protocol VPN node running in under 10 minutes.
 The fastest path — paste one line on a fresh Ubuntu 22.04/24.04 VPS:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Feint-VPN/node/e1/install.sh | \
+curl -fsSL https://raw.githubusercontent.com/Feint-VPN/feint-node/main/install.sh | \
   sudo bash -s -- --domain vpn.example.com --email admin@example.com
 ```
 
@@ -34,7 +34,7 @@ The script handles everything with **zero prompts**:
 | `--api-port` | `8337`          | HTTPS API port               |
 | `--dir`      | `/opt/vpn-node` | Install directory            |
 | `--sub`      | `true`          | Enable subscription endpoint |
-| `--branch`   | `e1`            | Git branch to clone          |
+| `--branch`   | `main`          | Git branch to clone          |
 
 When it finishes you'll see the API URL, all ports, and the Hiddify subscription URL.
 
@@ -51,7 +51,7 @@ To switch the deployed branch during update:
 
 ```bash
 cd /opt/vpn-node
-sudo bash ./update.sh --branch e1
+sudo bash ./update.sh --branch main
 ```
 
 The updater preserves `.env.local`, reapplies the local Docker GID and API port patch to `docker-compose.yml`, rebuilds the custom sing-box and API images, migrates the persisted stats config, and runs local health and stats reachability checks.
@@ -73,7 +73,7 @@ If you prefer full control, follow these steps instead.
 ### 1 · Clone & configure
 
 ```bash
-git clone https://github.com/Feint-VPN/node.git /opt/vpn-node
+git clone https://github.com/Feint-VPN/feint-node.git /opt/vpn-node
 cd /opt/vpn-node
 cp .env.example .env.local
 ```

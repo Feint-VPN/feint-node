@@ -13,7 +13,7 @@ process if it is occupied and never stops it.
 ## 2. Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Feint-VPN/node/e1/install.sh | \
+curl -fsSL https://raw.githubusercontent.com/Feint-VPN/feint-node/main/install.sh | \
   sudo bash -s -- --domain vpn.example.com --email admin@example.com
 ```
 

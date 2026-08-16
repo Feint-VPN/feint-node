@@ -42,7 +42,7 @@ automation.
 ## Installation
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Feint-VPN/node/e1/install.sh | \
+curl -fsSL https://raw.githubusercontent.com/Feint-VPN/feint-node/main/install.sh | \
   sudo bash -s -- --domain vpn.example.com --email admin@example.com
 ```
 
@@ -82,7 +82,7 @@ to change SSH, verify a new SSH session before ending the existing one. See the
 
 ```bash
 sudo bash ./update.sh
-sudo bash ./update.sh --branch e1
+sudo bash ./update.sh --branch main
 ```
 
 `update.sh` preserves `.env.local`, including ports, secrets, and `DOCKER_GID`.

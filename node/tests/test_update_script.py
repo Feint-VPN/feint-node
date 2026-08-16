@@ -3,6 +3,12 @@
 from pathlib import Path
 
 
+def test_update_script_falls_back_to_main_branch():
+    content = Path("../update.sh").read_text(encoding="utf-8")
+
+    assert 'echo "main"' in content
+
+
 def test_update_script_exists():
     script_path = Path("../update.sh")
     assert script_path.exists(), "update.sh script not found"

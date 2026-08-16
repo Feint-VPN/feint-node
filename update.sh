@@ -2,7 +2,7 @@
 # ============================================================
 #  Feint VPN Node — in-place updater
 #  Usage:
-#    sudo ./update.sh [--branch e1] [--dir /opt/vpn-node] [--force]
+#    sudo ./update.sh [--branch main] [--dir /opt/vpn-node] [--force]
 #
 #  What it does:
 #    - validates the deployed repo and local runtime config
@@ -46,7 +46,7 @@ Options:
 
 Examples:
   sudo ./update.sh
-  sudo ./update.sh --branch e1
+  sudo ./update.sh --branch main
   sudo ./update.sh --dir /opt/vpn-node --force
 EOF
 }
@@ -142,7 +142,7 @@ detect_branch() {
         return 0
     fi
 
-    echo "e1"
+    echo "main"
 }
 
 generate_secret() {

@@ -100,7 +100,7 @@ The installer prepares Docker, validates ports, obtains the TLS certificate,
 generates secrets and starts the node:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Feint-VPN/node/e1/install.sh | \
+curl -fsSL https://raw.githubusercontent.com/Feint-VPN/feint-node/main/install.sh | \
   sudo bash -s -- \
   --domain vpn.example.com \
   --email admin@example.com
@@ -127,7 +127,7 @@ automatically.
 | `--api-port` | `8337` | Public HTTPS API port. |
 | `--dir` | `/opt/vpn-node` | Installation directory. |
 | `--sub` | `true` | Enable the node subscription endpoint. |
-| `--branch` | `e1` | Repository branch installed on the server. |
+| `--branch` | `main` | Repository branch installed on the server. |
 
 ## 🛸 Security and endpoint hiding
 

@@ -2,7 +2,7 @@
 # ============================================================
 #  Feint VPN Node — one-command installer
 #  Usage:
-#    curl -fsSL https://raw.githubusercontent.com/Feint-VPN/node/e1/install.sh | bash -s -- \
+#    curl -fsSL https://raw.githubusercontent.com/Feint-VPN/feint-node/main/install.sh | bash -s -- \
 #        --domain vpn.example.com \
 #        --email  admin@example.com
 #
@@ -13,7 +13,7 @@
 #    --api-port HTTPS API port                   (default: 8337)
 #    --dir      Install directory                (default: /opt/vpn-node)
 #    --sub      Enable subscription endpoint     (default: true)
-#    --branch   Git branch to clone              (default: e1)
+#    --branch   Git branch to clone              (default: main)
 # ============================================================
 set -euo pipefail
 
@@ -41,7 +41,7 @@ API_SECRET=""
 API_PORT="8337"
 INSTALL_DIR="/opt/vpn-node"
 SUB_ENABLED="true"
-BRANCH="e1"
+BRANCH="main"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -61,7 +61,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --api-port HTTPS API port               (default: 8337)"
             echo "  --dir      Install directory            (default: /opt/vpn-node)"
             echo "  --sub      Enable subscription endpoint (default: true)"
-            echo "  --branch   Git branch                   (default: e1)"
+            echo "  --branch   Git branch                   (default: main)"
             exit 0 ;;
         *) die "Unknown argument: $1" ;;
     esac
@@ -217,7 +217,7 @@ info "Docker GID: ${DOCKER_GID}"
 # ── step 3: clone repository ──────────────────────────────────────────────────
 header "Step 3 / 6 — Clone repository"
 
-REPO_URL="https://github.com/Feint-VPN/node.git"
+REPO_URL="https://github.com/Feint-VPN/feint-node.git"
 
 if [[ -d "$INSTALL_DIR/.git" ]]; then
     warn "Directory $INSTALL_DIR already exists — pulling latest changes"

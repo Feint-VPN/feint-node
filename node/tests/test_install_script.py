@@ -3,6 +3,13 @@
 from pathlib import Path
 
 
+def test_install_script_uses_canonical_repository_and_branch():
+    content = Path("../install.sh").read_text(encoding="utf-8")
+
+    assert 'REPO_URL="https://github.com/Feint-VPN/feint-node.git"' in content
+    assert 'BRANCH="main"' in content
+
+
 def test_install_script_generates_secrets_safely_with_pipefail():
     script_path = Path("../install.sh")
     content = script_path.read_text(encoding="utf-8")
