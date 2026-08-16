@@ -13,24 +13,31 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENV_FILE="$INSTALL_DIR/.env.local"
 NEW_SSH_PORT=""
+NO_CONFIRM=false
 
 usage() {
     cat <<EOF
-Usage: sudo $0 [--ssh-port PORT] [--dir DIR]
+Usage: sudo $0 [--ssh-port PORT] [--no-confirm] [--dir DIR]
 
 The SSH port is always changed. Without --ssh-port, a free random port is used.
 Keep this terminal open and confirm a second SSH connection when prompted.
+--no-confirm is intended for SDK installation and requires an explicit port.
 EOF
 }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --ssh-port) [[ $# -ge 2 ]] || die "--ssh-port requires a value"; NEW_SSH_PORT="$2"; shift 2 ;;
+        --no-confirm) NO_CONFIRM=true; shift ;;
         --dir) [[ $# -ge 2 ]] || die "--dir requires a value"; INSTALL_DIR="$2"; ENV_FILE="$2/.env.local"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
         *) die "Unknown argument: $1" ;;
     esac
 done
+
+if [[ "$NO_CONFIRM" == true && -z "$NEW_SSH_PORT" ]]; then
+    die "--no-confirm requires --ssh-port"
+fi
 
 [[ $EUID -eq 0 ]] || die "Run as root"
 [[ -f "$ENV_FILE" ]] || die "Missing runtime configuration: $ENV_FILE"
@@ -158,14 +165,16 @@ if ! port_is_in_use tcp "$NEW_SSH_PORT"; then
     false
 fi
 
-warn "Keep this terminal open. In a second terminal, connect with:"
-echo "  ssh -p $NEW_SSH_PORT <user>@<server>"
-echo
-printf 'Type CONFIRM after the new SSH session works: '
-read -r confirmation </dev/tty
-if [[ "$confirmation" != CONFIRM ]]; then
-    error "The new SSH connection was not confirmed"
-    false
+if [[ "$NO_CONFIRM" == false ]]; then
+    warn "Keep this terminal open. In a second terminal, connect with:"
+    echo "  ssh -p $NEW_SSH_PORT <user>@<server>"
+    echo
+    printf 'Type CONFIRM after the new SSH session works: '
+    read -r confirmation </dev/tty
+    if [[ "$confirmation" != CONFIRM ]]; then
+        error "The new SSH connection was not confirmed"
+        false
+    fi
 fi
 
 ufw --force delete allow "$OLD_SSH_PORT/tcp" >/dev/null

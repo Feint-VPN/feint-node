@@ -124,6 +124,21 @@ generated ports and secrets and validates the result with `sing-box check`.
 | `--dir` | `/opt/vpn-node` | Installation directory. |
 | `--sub` | `true` | Enable the node subscription endpoint. |
 | `--branch` | `main` | Repository branch installed on the server. |
+| `--new-ssh-port` | random | Use this fixed SSH port and skip interactive confirmation for SDK installation. |
+
+For a non-interactive SDK installation, provide the SSH port that the SDK will
+persist and use after provisioning:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Feint-VPN/feint-node/main/install.sh | \
+  sudo bash -s -- \
+  --domain vpn.example.com \
+  --email admin@example.com \
+  --new-ssh-port 41035
+```
+
+Without `--new-ssh-port`, the installer keeps the manual flow: it selects a
+random port and waits until a second SSH connection is confirmed.
 
 ## 🛸 Security and endpoint hiding
 
@@ -287,8 +302,9 @@ Apply selected ports atomically:
 
 ```bash
 bash scripts/ports.sh set --api 8337 --vless 28473 --apply
-sudo ./scripts/setup-firewall.sh
 ```
+
+When UFW is active, `--apply` synchronizes its allowlist automatically.
 
 Without `--apply`, the command only previews a validated port plan. `--apply`
 updates `.env.local`, validates conflicts and duplicates, updates the
