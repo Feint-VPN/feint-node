@@ -64,6 +64,7 @@ show_ports() {
     for key in "${PORT_KEYS[@]}"; do
         value="$(env_get "$key" "$file")"
         protocol="$(port_protocol "$key")"
+        [[ "$key" == SHADOWSOCKS_PORT ]] && protocol=tcp+udp
         printf '%-18s %5s/%s\n' "$key" "$value" "$protocol"
     done
 }
@@ -80,24 +81,36 @@ check_ports() {
         else
             printf '%s %s/%s has no host listener\n' "$key" "$value" "$protocol"
         fi
+        if [[ "$key" == SHADOWSOCKS_PORT ]]; then
+            details="$(port_listener_details udp "$value")"
+            if [[ -n "$details" ]]; then
+                printf '%s %s/udp is listening:\n%s\n' "$key" "$value" "$details"
+            else
+                printf '%s %s/udp has no host listener\n' "$key" "$value"
+            fi
+        fi
     done
     return "$failed"
 }
 
 randomize_ports() {
-    local key protocol port used_key
+    local key protocol port used_key udp_key
     declare -A generated=()
     for key in "${PORT_KEYS[@]}"; do
         protocol="$(port_protocol "$key")"
         while :; do
             case "$key" in
                 API_PORT) port="$(port_find_free tcp 8000 9000)" ;;
+                SHADOWSOCKS_PORT) port="$(port_find_free_both 10000 60000)" ;;
                 *) port="$(port_find_free "$protocol" 10000 60000)" ;;
             esac
             used_key="${protocol}:${port}"
+            udp_key="udp:${port}"
+            [[ "$key" == SHADOWSOCKS_PORT && -n "${generated[$udp_key]:-}" ]] && continue
             [[ -z "${generated[$used_key]:-}" ]] && break
         done
         generated[$used_key]=1
+        [[ "$key" == SHADOWSOCKS_PORT ]] && generated[$udp_key]=1
         REQUESTED[$key]="$port"
     done
 }
@@ -115,6 +128,9 @@ validate_requested() {
     for key in "${!REQUESTED[@]}"; do
         old="$(env_get "$key" "$ENV_FILE")"; new="${REQUESTED[$key]}"; protocol="$(port_protocol "$key")"
         [[ "$old" == "$new" ]] || port_require_available "$protocol" "$new" "$key"
+        if [[ "$key" == SHADOWSOCKS_PORT && "$old" != "$new" ]]; then
+            port_require_available udp "$new" "$key"
+        fi
     done
     printf '%s\n' "$staged"
 }

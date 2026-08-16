@@ -259,7 +259,7 @@ VLESS_PORT=$(port_find_free_unique tcp 10000 60000 "$API_PORT") || die "Could no
 VMESS_PORT=$(port_find_free_unique tcp 10000 60000 "$API_PORT" "$VLESS_PORT") || die "Could not find a free VMess TCP port"
 TROJAN_PORT=$(port_find_free_unique tcp 10000 60000 "$API_PORT" "$VLESS_PORT" "$VMESS_PORT") || die "Could not find a free Trojan TCP port"
 HY2_PORT=$(port_find_free_unique udp 10000 60000) || die "Could not find a free Hysteria2 UDP port"
-SS_PORT=$(port_find_free_unique tcp 10000 60000 "$API_PORT" "$VLESS_PORT" "$VMESS_PORT" "$TROJAN_PORT") || die "Could not find a free Shadowsocks TCP port"
+SS_PORT=$(port_find_free_both 10000 60000 "$API_PORT" "$VLESS_PORT" "$VMESS_PORT" "$TROJAN_PORT" "$HY2_PORT") || die "Could not find a free Shadowsocks TCP/UDP port"
 
 # Detect public IP
 SERVER_IP=$(curl -4sSf https://api.ipify.org 2>/dev/null \

@@ -101,6 +101,20 @@ port_find_free_unique() {
     return 1
 }
 
+port_find_free_both() {
+    local min="$1" max="$2" port attempts=0
+    shift 2
+    while (( attempts < 200 )); do
+        port="$(port_find_free_unique tcp "$min" "$max" "$@")" || return 1
+        if ! port_is_in_use udp "$port"; then
+            printf '%s\n' "$port"
+            return 0
+        fi
+        ((attempts += 1))
+    done
+    return 1
+}
+
 port_require_unique_config() {
     local env_file="$1" key protocol value other other_protocol other_value
     for key in "${PORT_KEYS[@]}"; do
@@ -118,4 +132,8 @@ port_require_unique_config() {
             fi
         done
     done
+    if [[ "$(env_get HYSTERIA2_PORT "$env_file")" == "$(env_get SHADOWSOCKS_PORT "$env_file")" ]]; then
+        printf 'HYSTERIA2_PORT and SHADOWSOCKS_PORT use the same UDP port\n' >&2
+        return 1
+    fi
 }
