@@ -481,7 +481,7 @@ else
 fi
 
 header "Secure host"
-"$INSTALL_DIR/scripts/setup-firewall.sh" --dir "$INSTALL_DIR"
+bash "$INSTALL_DIR/scripts/setup-firewall.sh" --dir "$INSTALL_DIR"
 wait_for_status "$STATUS_URL" \
     || die "Host was secured, but the complete node status is not healthy"
 success "API status is healthy"
