@@ -8,6 +8,17 @@ change:
 sudo ./scripts/setup-firewall.sh
 ```
 
+SDK installation uses a predetermined port without reading from `/dev/tty`:
+
+```bash
+sudo ./scripts/setup-firewall.sh --ssh-port 41035 --no-confirm
+```
+
+`--no-confirm` is rejected unless `--ssh-port` is also provided. The script
+still validates the port, SSH configuration, listener, and firewall before
+closing the old port. The SDK must reconnect to the selected port after the
+installer exits.
+
 The script always moves SSH to a new checked port and replaces the host's UFW
 rules with this allowlist:
 
@@ -20,11 +31,10 @@ rules with this allowlist:
 
 ## Safe order for changing ports
 
-First apply the running-service change, then update UFW:
+The port helper updates the running services and active UFW allowlist together:
 
 ```bash
 bash scripts/ports.sh set --api 8337 --vless 28473 --apply
-sudo ./scripts/setup-firewall.sh
 ```
 
 Inspect the current configuration before making a change:

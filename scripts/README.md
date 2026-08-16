@@ -47,6 +47,16 @@ You can select the API port during installation:
 sudo bash install.sh --domain vpn.example.com --email admin@example.com --api-port 8337
 ```
 
+SDK provisioning must select the SSH port up front. This makes installation
+non-interactive and leaves the SDK with the exact port to persist:
+
+```bash
+sudo bash install.sh \
+  --domain vpn.example.com \
+  --email admin@example.com \
+  --new-ssh-port 41035
+```
+
 The installer validates the chosen API port and selects available protocol
 ports. It also requires TCP port 80 for the standalone Let's Encrypt HTTP
 challenge. If port 80 is in use, installation stops and identifies the
@@ -63,9 +73,9 @@ sudo ./scripts/setup-firewall.sh
 ```
 
 It replaces host firewall rules with the Feint allowlist and requires moving
-SSH to a new free port. The old SSH port remains open until you confirm a second
-session, then it is removed. See the [firewall guide](FIREWALL_SETUP.md) for the
-exact flow and recovery steps.
+SSH to a new free port. Manual use confirms a second session. SDK installation
+passes an explicit port and uses the non-interactive mode. See the
+[firewall guide](FIREWALL_SETUP.md) for the exact flows and recovery steps.
 
 ## Updates
 

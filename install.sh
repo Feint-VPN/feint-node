@@ -14,6 +14,7 @@
 #    --dir      Install directory                (default: /opt/vpn-node)
 #    --sub      Enable subscription endpoint     (default: true)
 #    --branch   Git branch to clone              (default: main)
+#    --new-ssh-port Fixed SSH port for non-interactive SDK installation
 # ============================================================
 set -euo pipefail
 
@@ -44,6 +45,7 @@ SUB_ENABLED="true"
 BRANCH="main"
 NODE_IMAGE="ghcr.io/feint-vpn/feint-node:latest"
 SINGBOX_IMAGE="ghcr.io/feint-vpn/feint-sing-box:v1.13.12-feint.1"
+NEW_SSH_PORT=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -54,6 +56,7 @@ while [[ $# -gt 0 ]]; do
         --dir)      INSTALL_DIR="$2"; shift 2 ;;
         --sub)      SUB_ENABLED="$2"; shift 2 ;;
         --branch)   BRANCH="$2";      shift 2 ;;
+        --new-ssh-port) [[ $# -ge 2 ]] || die "--new-ssh-port requires a value"; NEW_SSH_PORT="$2"; shift 2 ;;
         -h|--help)
             echo "Usage: $0 --domain <fqdn> --email <email> [options]"
             echo ""
@@ -64,6 +67,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --dir      Install directory            (default: /opt/vpn-node)"
             echo "  --sub      Enable subscription endpoint (default: true)"
             echo "  --branch   Git branch                   (default: main)"
+            echo "  --new-ssh-port Fixed SSH port; skips interactive confirmation"
             exit 0 ;;
         *) die "Unknown argument: $1" ;;
     esac
@@ -79,6 +83,10 @@ echo "$EMAIL" | grep -qE '^[^@]+@[^@]+\.[^@]+$' \
     || die "Invalid email: $EMAIL"
 echo "$API_PORT" | grep -qE '^[0-9]{2,5}$' \
     || die "Invalid port: $API_PORT"
+if [[ -n "$NEW_SSH_PORT" ]]; then
+    [[ "$NEW_SSH_PORT" =~ ^[0-9]+$ ]] && (( NEW_SSH_PORT >= 1024 && NEW_SSH_PORT <= 65535 )) \
+        || die "--new-ssh-port must be between 1024 and 65535"
+fi
 
 # ── must run as root ──────────────────────────────────────────────────────────
 [[ $EUID -ne 0 ]] && die "Run as root: sudo bash $0 $*"
@@ -481,7 +489,11 @@ else
 fi
 
 header "Secure host"
-bash "$INSTALL_DIR/scripts/setup-firewall.sh" --dir "$INSTALL_DIR"
+FIREWALL_ARGS=(--dir "$INSTALL_DIR")
+if [[ -n "$NEW_SSH_PORT" ]]; then
+    FIREWALL_ARGS+=(--ssh-port "$NEW_SSH_PORT" --no-confirm)
+fi
+bash "$INSTALL_DIR/scripts/setup-firewall.sh" "${FIREWALL_ARGS[@]}"
 wait_for_status "$STATUS_URL" \
     || die "Host was secured, but the complete node status is not healthy"
 success "API status is healthy"

@@ -26,6 +26,18 @@ sudo bash install.sh \
   --api-port 8337
 ```
 
+For SDK-controlled provisioning, also choose the future SSH port:
+
+```bash
+sudo bash install.sh \
+  --domain vpn.example.com \
+  --email admin@example.com \
+  --new-ssh-port 41035
+```
+
+This mode does not prompt for `CONFIRM`; the SDK reconnects to port `41035`
+after installation.
+
 The installer validates the requested API port, finds unused protocol ports,
 writes them to `/opt/vpn-node/.env.local`, and starts the stack. It reuses
 normal Docker build caching on later updates.
