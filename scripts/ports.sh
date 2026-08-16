@@ -149,7 +149,7 @@ PY
 
 wait_for_status() {
     local url="$1" api_secret="$2"
-    for _ in {1..30}; do
+    for _ in {1..60}; do
         if curl -skf -H "X-API-Secret: ${api_secret}" "$url" \
             | grep -q '"status":"ok"'; then
             return 0
