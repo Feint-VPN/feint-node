@@ -54,7 +54,7 @@ cd /opt/vpn-node
 sudo bash ./update.sh --branch main
 ```
 
-The updater preserves `.env.local`, reapplies the local Docker GID and API port patch to `docker-compose.yml`, rebuilds the custom sing-box and API images, migrates the persisted stats config, and runs local health and stats reachability checks.
+The updater preserves `.env.local`, reapplies local runtime settings, pulls the published node and sing-box images, migrates the persisted stats config, and runs local health and stats reachability checks.
 
 ---
 
@@ -244,8 +244,8 @@ docker compose logs certbot
 ```bash
 cd /opt/vpn-node
 git pull
-docker compose build --no-cache sing-box vpn-node-api
-docker compose up -d --no-build --force-recreate sing-box vpn-node-api
+docker compose pull sing-box vpn-node-api
+docker compose up -d --force-recreate sing-box vpn-node-api
 ```
 
 sing-box config and user data are stored in a Docker volume — they survive rebuilds.

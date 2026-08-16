@@ -9,7 +9,7 @@
 #    - preserves .env.local via backup
 #    - fetches the target branch and fast-forwards via reset
 #    - preserves declarative runtime values from .env.local
-#    - pulls service images, rebuilds the API image, restarts containers
+#    - pulls service images and restarts containers
 #    - performs a local /health probe at the configured API port
 # ============================================================
 set -euo pipefail
@@ -401,10 +401,7 @@ CLASH_API_SECRET="$(env_get "CLASH_API_SECRET" "$ENV_FILE" "")"
 header "Step 4 / 6 — Refresh containers"
 
 info "Pulling service images ..."
-compose pull certbot sing-box
-
-info "Rebuilding vpn-node-api ..."
-compose build vpn-node-api
+compose pull certbot sing-box vpn-node-api
 
 info "Restarting containers ..."
 compose up -d --no-build --remove-orphans

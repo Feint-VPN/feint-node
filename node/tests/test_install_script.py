@@ -34,19 +34,14 @@ def test_install_script_never_prints_the_api_secret():
     assert "X-API-Secret: <read it from .env.local>" in content
 
 
-def test_install_script_pulls_singbox_and_builds_only_the_api_image():
+def test_install_script_pulls_prebuilt_service_images():
     script_path = Path("../install.sh")
     content = script_path.read_text(encoding="utf-8")
 
-    assert "compose pull sing-box" in content, (
-        "install.sh must pull the official sing-box image"
+    assert "compose pull vpn-node-api sing-box" in content, (
+        "install.sh must pull the published service images"
     )
-    assert "compose build vpn-node-api" in content, (
-        "install.sh must build only vpn-node-api"
-    )
-    assert "compose build sing-box" not in content, (
-        "install.sh must not build sing-box from source"
-    )
+    assert "compose build" not in content, "install.sh must not build on the VPS"
     assert "compose up -d --no-build" in content, (
         "install.sh must start the prepared images"
     )
@@ -62,6 +57,15 @@ def test_compose_uses_a_pinned_official_singbox_image():
 
     assert "image: ${SINGBOX_IMAGE:-ghcr.io/sagernet/sing-box:v1.13.12}" in content
     assert "build:" not in content.split("  sing-box:", 1)[1].split("  certbot:", 1)[0]
+
+
+def test_compose_uses_published_node_image():
+    content = Path("../docker-compose.yml").read_text(encoding="utf-8")
+
+    assert "image: ${NODE_IMAGE:-ghcr.io/feint-vpn/feint-node:latest}" in content
+    assert "build:" not in content.split("  vpn-node-api:", 1)[1].split(
+        "  sing-box:", 1
+    )[0]
 
 
 def test_install_script_writes_stats_runtime_env_values():

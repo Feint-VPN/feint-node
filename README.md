@@ -306,6 +306,7 @@ Runtime values live in `.env.local`. Start from [`.env.example`](.env.example).
 | `SERVER_DOMAIN` | `example.com` | Public host used in generated URLs. |
 | `SUBSCRIPTION_ENABLED` | `false` | Enable `/sub/{username}`. |
 | `SUB_URI_TEMPLATE` | `🌌 Feint \| {Protocol}` | Display label for generated URIs. |
+| `NODE_IMAGE` | `ghcr.io/feint-vpn/feint-node:latest` | Published node API image. |
 | `VLESS_PORT` | configurable | VLESS Reality listener. |
 | `VMESS_PORT` | configurable | VMess WebSocket listener. |
 | `TROJAN_PORT` | configurable | Trojan listener. |

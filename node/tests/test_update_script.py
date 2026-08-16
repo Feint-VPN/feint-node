@@ -37,15 +37,10 @@ def test_update_script_updates_git_and_containers():
 
     assert "git fetch" in content, "update.sh must fetch the target branch"
     assert "git reset --hard" in content, "update.sh must reset to the remote branch"
-    assert "compose pull certbot sing-box" in content, (
-        "update.sh must pull sing-box updates"
+    assert "compose pull certbot sing-box vpn-node-api" in content, (
+        "update.sh must pull all service images"
     )
-    assert "compose build vpn-node-api" in content, (
-        "update.sh must rebuild only the API image"
-    )
-    assert "compose build sing-box" not in content, (
-        "update.sh must not rebuild sing-box from source"
-    )
+    assert "compose build" not in content, "update.sh must not build on the VPS"
     assert "compose up -d --no-build --remove-orphans" in content, (
         "update.sh must restart prepared images"
     )

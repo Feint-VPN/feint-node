@@ -1,8 +1,6 @@
 services:
   vpn-node-api:
-    build:
-      context: ./node
-      dockerfile: Dockerfile
+    image: ${NODE_IMAGE:-ghcr.io/feint-vpn/feint-node:latest}
     container_name: vpn-node-api
     ports:
       - "${API_PORT:-8337}:${API_PORT:-8337}"

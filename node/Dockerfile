@@ -40,12 +40,4 @@ ENV PYTHONPATH=/app/src
 EXPOSE ${API_PORT:-8000}
 
 # Run uvicorn; skip SSL when DEV_MODE=true
-CMD if [ "${DEV_MODE:-false}" = "true" ]; then \
-      uvicorn main:app --host 0.0.0.0 --port ${API_PORT:-8000}; \
-    else \
-      uvicorn main:app \
-        --host 0.0.0.0 \
-        --port ${API_PORT:-8000} \
-        --ssl-keyfile ${TLS_KEY_PATH} \
-        --ssl-certfile ${TLS_CERT_PATH}; \
-    fi
+CMD ["sh", "-c", "if [ \"${DEV_MODE:-false}\" = \"true\" ]; then exec uvicorn main:app --host 0.0.0.0 --port ${API_PORT:-8000}; else exec uvicorn main:app --host 0.0.0.0 --port ${API_PORT:-8000} --ssl-keyfile ${TLS_KEY_PATH} --ssl-certfile ${TLS_CERT_PATH}; fi"]

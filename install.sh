@@ -441,11 +441,8 @@ header "Step 6 / 6 — Start containers"
 # Compose reads API_PORT and DOCKER_GID from the declarative .env.local file.
 compose() { docker compose --env-file "$ENV_FILE" "$@"; }
 
-info "Pulling the prebuilt sing-box image..."
-compose pull sing-box
-
-info "Building the API image..."
-run_with_log compose build vpn-node-api
+info "Pulling service images..."
+run_with_log compose pull vpn-node-api sing-box
 
 # ── generate sing-box config.json directly ────────────────────────────────────
 # The /initialize API endpoint regenerates all secrets and uses hardcoded ports,
