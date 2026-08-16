@@ -129,7 +129,7 @@ cp "$ENV_FILE" "$ENV_BACKUP"
     "${CONFIG_PATH:-/opt/sing-box/config.json}" > "$CONFIG_BACKUP"
 
 NODE_IMAGE="$(env_get NODE_IMAGE "$ENV_FILE" ghcr.io/feint-vpn/feint-node:latest)"
-SINGBOX_IMAGE="$(env_get SINGBOX_IMAGE "$ENV_FILE" ghcr.io/sagernet/sing-box:v1.13.12)"
+SINGBOX_IMAGE="$(env_get SINGBOX_IMAGE "$ENV_FILE" ghcr.io/feint-vpn/feint-sing-box:v1.13.12-feint.1)"
 CERTBOT_IMAGE="certbot/certbot:latest"
 OLD_NODE_IMAGE="$("${COMPOSE[@]}" images -q vpn-node-api)"
 OLD_SINGBOX_IMAGE="$("${COMPOSE[@]}" images -q sing-box)"

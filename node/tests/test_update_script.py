@@ -23,6 +23,7 @@ def test_update_script_has_a_small_transactional_flow():
     assert 'cp "$ENV_BACKUP" "$ENV_FILE"' in content
     assert 'cp "$CONFIG_BACKUP"' in content
     assert "pull certbot sing-box vpn-node-api" in content
+    assert "ghcr.io/feint-vpn/feint-sing-box:v1.13.12-feint.1" in content
     assert "up -d --no-build --remove-orphans" in content
     assert "wait_for_status" in content
 

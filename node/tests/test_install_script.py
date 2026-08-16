@@ -101,12 +101,18 @@ def test_install_script_pulls_prebuilt_service_images():
     assert "--no-cache" not in content, "install.sh must retain Docker layer caching"
 
 
-def test_compose_uses_a_pinned_official_singbox_image():
+def test_compose_uses_a_pinned_v2ray_enabled_singbox_image():
     compose_path = ROOT / "docker-compose.yml"
     content = compose_path.read_text(encoding="utf-8")
+    dockerfile = (ROOT / "sing-box" / "Dockerfile").read_text(encoding="utf-8")
 
-    assert "image: ${SINGBOX_IMAGE:-ghcr.io/sagernet/sing-box:v1.13.12}" in content
+    assert (
+        "image: ${SINGBOX_IMAGE:-ghcr.io/feint-vpn/feint-sing-box:"
+        "v1.13.12-feint.1}" in content
+    )
     assert "build:" not in content.split("  sing-box:", 1)[1].split("  certbot:", 1)[0]
+    assert "ARG SINGBOX_REF=v1.13.12" in dockerfile
+    assert "with_v2ray_api" in dockerfile
 
 
 def test_compose_uses_published_node_image():
