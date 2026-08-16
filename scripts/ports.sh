@@ -4,6 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/ports.sh"
+source "$SCRIPT_DIR/lib/firewall.sh"
 
 INSTALL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENV_FILE="$INSTALL_DIR/.env.local"
@@ -164,6 +165,14 @@ wait_for_status() {
     return 1
 }
 
+sync_firewall() {
+    command -v ufw >/dev/null && ufw status | grep -q '^Status: active' || return 0
+    [[ $EUID -eq 0 ]] || die "Run as root to synchronize the active firewall"
+    local ssh_port
+    ssh_port="$(sshd -T | awk '$1 == "port" { print $2; exit }')"
+    firewall_apply "$ENV_FILE" "$ssh_port"
+}
+
 restore_ports() {
     local env_backup="$1" config_backup="$2" failed=false
     cp "$env_backup" "$ENV_FILE" || failed=true
@@ -172,6 +181,7 @@ restore_ports() {
     "${COMPOSE[@]}" exec -T --user root vpn-node-api sh -c \
         "chown 1000:1000 '$CONFIG_PATH' && chmod 600 '$CONFIG_PATH'" || failed=true
     "${COMPOSE[@]}" restart sing-box || failed=true
+    sync_firewall || failed=true
     [[ "$failed" == false ]]
 }
 
@@ -187,7 +197,8 @@ apply_ports() {
         || ! render_singbox_ports \
         || ! "${COMPOSE[@]}" exec -T sing-box sing-box check -c /opt/sing-box/config.json \
         || ! "${COMPOSE[@]}" restart sing-box \
-        || ! wait_for_status; then
+        || ! wait_for_status \
+        || ! sync_firewall; then
         if restore_ports "$env_backup" "$config_backup"; then
             rm -f "$staged" "$env_backup" "$config_backup"
             die "Port change failed; previous configuration was restored"
