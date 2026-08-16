@@ -131,6 +131,10 @@ def test_compose_uses_a_pinned_v2ray_enabled_singbox_image():
     assert "build:" not in content.split("  sing-box:", 1)[1].split("  certbot:", 1)[0]
     assert "ARG SINGBOX_REF=v1.13.12" in dockerfile
     assert "with_v2ray_api" in dockerfile
+    assert (
+        'org.opencontainers.image.source="https://github.com/Feint-VPN/feint-node"'
+        in dockerfile
+    )
 
 
 def test_compose_uses_published_node_image():
