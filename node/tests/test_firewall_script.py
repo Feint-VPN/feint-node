@@ -52,6 +52,9 @@ def test_firewall_replaces_host_rules_with_the_feint_allowlist():
     assert 'ufw allow "$HYSTERIA2_PORT/udp"' in content
     assert 'ufw allow "$SHADOWSOCKS_PORT/tcp"' in content
     assert 'ufw allow "$SHADOWSOCKS_PORT/udp"' in content
+    assert 'DOCKER_BRIDGE="br-${DOCKER_NETWORK_ID:0:12}"' in content
+    assert 'from "$DOCKER_SUBNET" to any port 9090 proto tcp' in content
+    assert 'from "$DOCKER_SUBNET" to any port 10085 proto tcp' in content
 
 
 def test_firewall_documentation_exists():

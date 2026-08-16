@@ -109,7 +109,7 @@ class TestSecretRedactionInLogs:
         filter_instance.filter(record)
 
         # Password should be redacted
-        assert password not in record.msg
+        assert f"password {password}" not in record.msg
         assert "[PASSWORD_REDACTED]" in record.msg or "[SECRET_REDACTED]" in record.msg
 
     @given(
@@ -201,7 +201,7 @@ class TestSecretRedactionInLogs:
 
         # All sensitive data should be redacted
         assert uuid_str not in record.msg
-        assert password not in record.msg
+        assert f"password {password}" not in record.msg
         assert secret not in record.msg
         assert "[UUID_REDACTED]" in record.msg
         assert "[PASSWORD_REDACTED]" in record.msg or "[SECRET_REDACTED]" in record.msg

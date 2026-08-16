@@ -48,6 +48,12 @@ VMESS_PORT="$(env_get VMESS_PORT "$ENV_FILE")"
 TROJAN_PORT="$(env_get TROJAN_PORT "$ENV_FILE")"
 HYSTERIA2_PORT="$(env_get HYSTERIA2_PORT "$ENV_FILE")"
 SHADOWSOCKS_PORT="$(env_get SHADOWSOCKS_PORT "$ENV_FILE")"
+command -v docker >/dev/null || die "Docker is required"
+DOCKER_NETWORK_ID="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.NetworkID}}{{end}}' vpn-node-api 2>/dev/null)"
+[[ "$DOCKER_NETWORK_ID" =~ ^[a-f0-9]{64}$ ]] || die "vpn-node-api must be running before firewall setup"
+DOCKER_BRIDGE="br-${DOCKER_NETWORK_ID:0:12}"
+DOCKER_SUBNET="$(docker network inspect "$DOCKER_NETWORK_ID" --format '{{(index .IPAM.Config 0).Subnet}}')"
+[[ -n "$DOCKER_SUBNET" ]] || die "Could not determine the Feint Docker subnet"
 ssh_connection="${SSH_CONNECTION:-}"
 OLD_SSH_PORT="${ssh_connection##* }"
 if ! port_validate "$OLD_SSH_PORT"; then
@@ -120,6 +126,8 @@ configure_firewall() {
     ufw allow "$HYSTERIA2_PORT/udp" comment 'Feint Hysteria2'
     ufw allow "$SHADOWSOCKS_PORT/tcp" comment 'Feint Shadowsocks'
     ufw allow "$SHADOWSOCKS_PORT/udp" comment 'Feint Shadowsocks'
+    ufw allow in on "$DOCKER_BRIDGE" from "$DOCKER_SUBNET" to any port 9090 proto tcp comment 'Feint Clash API internal'
+    ufw allow in on "$DOCKER_BRIDGE" from "$DOCKER_SUBNET" to any port 10085 proto tcp comment 'Feint V2Ray API internal'
     ufw --force enable >/dev/null
 }
 

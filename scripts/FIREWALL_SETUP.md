@@ -41,6 +41,10 @@ that the new listeners are healthy.
 All other host ports are denied. Docker-published bridge ports remain managed by
 Docker rather than UFW.
 
+The Clash and V2Ray statistics APIs stay private. Ports `9090` and `10085` are
+allowed only from the node's Docker bridge subnet, never from the public
+interface.
+
 ## SSH confirmation
 
 Keep the current terminal open. The old SSH port remains available only during
