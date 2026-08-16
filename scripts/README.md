@@ -22,11 +22,10 @@ bash scripts/ports.sh randomize --apply
 the same transport, and report a process already listening on a requested port.
 They never kill a process to make a port available.
 
-Without `--apply`, the command only stages values in `.env.local`; use that
-only before the stack's first start. On a running node, `--apply` recreates the
-API container, updates the persisted sing-box configuration, restarts sing-box,
-checks the API health endpoint, and restores the prior configuration if any
-step fails.
+Without `--apply`, the command only prints the validated plan and leaves the
+deployment unchanged. With `--apply`, it recreates the API container, updates
+the persisted sing-box configuration, restarts sing-box, checks `/status`, and
+restores the previous env and sing-box configuration if any step fails.
 
 After every port change, update firewall rules and distribute fresh client
 configuration to users:
@@ -34,10 +33,6 @@ configuration to users:
 ```bash
 sudo ./scripts/setup-firewall.sh
 ```
-
-`scripts/generate-ports.sh` remains as a compatibility wrapper for
-`ports.sh randomize`; use `ports.sh` for all new operational documentation and
-automation.
 
 ## Installation
 
@@ -59,13 +54,6 @@ listener; it does not interrupt the existing service. Free port 80 or use a
 different certificate arrangement before installing. Webroot and DNS ACME
 modes are not implemented yet.
 
-### Legacy `init-node.sh`
-
-`init-node.sh` is retained only for callers that use its former three-argument
-interface. It validates those arguments and delegates to `install.sh`; the
-server-IP argument is informational because the installer discovers the host
-network configuration. New automation should call `install.sh` directly.
-
 ## Firewall
 
 Run the firewall setup only after `.env.local` contains the intended port plan:
@@ -74,9 +62,10 @@ Run the firewall setup only after `.env.local` contains the intended port plan:
 sudo ./scripts/setup-firewall.sh
 ```
 
-It reads `.env.local` and opens the API, ACME, and VPN listeners. If you choose
-to change SSH, verify a new SSH session before ending the existing one. See the
-[firewall guide](FIREWALL_SETUP.md) for recovery steps.
+It replaces host firewall rules with the Feint allowlist and requires moving
+SSH to a new free port. The old SSH port remains open until you confirm a second
+session, then it is removed. See the [firewall guide](FIREWALL_SETUP.md) for the
+exact flow and recovery steps.
 
 ## Updates
 
@@ -85,9 +74,11 @@ sudo bash ./update.sh
 sudo bash ./update.sh --branch main
 ```
 
-`update.sh` preserves `.env.local`, including ports, secrets, and `DOCKER_GID`.
-The Compose file is declarative and should stay tracked and unmodified. Updates
-reuse Docker's normal layer cache; they do not force a clean image build.
+`update.sh` backs up `.env.local` and the deployed sing-box config, pulls the
+tracked code and published images, then synchronizes the deployed config with
+the updated template while preserving every inbound's users. The rendered
+candidate passes `sing-box check` before replacement. A failed rollout restores
+the previous commit, images, env and config.
 
 ## Manual Docker Compose
 
@@ -99,6 +90,19 @@ docker compose --env-file .env.local ps
 docker compose --env-file .env.local logs -f vpn-node-api
 docker compose --env-file .env.local restart sing-box
 ```
+
+## Diagnostics
+
+Run the read-only deployment checks before collecting individual logs:
+
+```bash
+sudo bash scripts/diagnose.sh
+sudo bash scripts/diagnose.sh --logs 50
+```
+
+The command checks configuration, containers, authenticated `/status`, the
+persisted sing-box config, listeners, SSH and UFW. Logs are opt-in, capped at
+100 lines, and configured secrets are redacted.
 
 ## Endpoint hiding
 

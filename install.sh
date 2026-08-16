@@ -88,7 +88,9 @@ if [[ -f "$INSTALL_DIR/.env.local" ]]; then
 fi
 
 # ── banner ────────────────────────────────────────────────────────────────────
-clear
+if [[ -t 1 && -n "${TERM:-}" ]]; then
+    clear
+fi
 echo -e "${BOLD}${CYAN}"
 cat << 'BANNER'
   ███████╗███████╗██╗███╗   ██╗████████╗
@@ -134,23 +136,19 @@ gen_secret() {
     printf '%s' "$secret"
 }
 
-# Wait until a URL returns HTTP 200 (or until timeout)
-wait_for_http() {
-    local url="$1" timeout="${2:-60}"
-    info "Waiting for $url ..."
-    local elapsed=0
-    while [[ $elapsed -lt $timeout ]]; do
-        if curl -sk -o /dev/null -w "%{http_code}" "$url" | grep -q "200"; then
-            return 0
-        fi
-        sleep 3; elapsed=$((elapsed + 3))
-    done
-    return 1
-}
-
 # Stream command output without hiding its exit status.
 run() {
     "$@" 2>&1 | sed 's/^/  │ /'
+}
+
+wait_for_status() {
+    local url="$1"
+    for _ in {1..30}; do
+        curl -skf -H "X-API-Secret: ${API_SECRET}" "$url" \
+            | grep -q '"status":"ok"' && return 0
+        sleep 1
+    done
+    return 1
 }
 
 # ── step 1: install system packages ──────────────────────────────────────────
@@ -228,7 +226,7 @@ info "Generating x25519 key pair for Reality..."
 KEYGEN_OUT=""
 # Preferred: use sing-box Docker image (same format the server expects)
 if command -v docker &>/dev/null; then
-    KEYGEN_OUT=$(docker run --rm ghcr.io/sagernet/sing-box:latest \
+    KEYGEN_OUT=$(docker run --rm ghcr.io/sagernet/sing-box:v1.13.12 \
         generate reality-keypair 2>/dev/null || true)
 fi
 # Fallback: host sing-box binary
@@ -471,7 +469,11 @@ info "Starting all containers..."
 compose up -d --no-build
 
 info "Waiting for VPN services to start..."
-sleep 6
+STATUS_SCHEME=https
+[[ "$(env_get API_USE_SSL "$ENV_FILE" true)" == true ]] || STATUS_SCHEME=http
+wait_for_status "${STATUS_SCHEME}://127.0.0.1:${API_PORT}/status" \
+    || die "Containers started, but the authenticated API status check failed"
+success "API status is healthy"
 
 # ── MTU TCPMSS clamp (fix for providers with reduced path MTU) ────────────────
 info "Applying MTU TCPMSS clamp for NAT forwarding..."
@@ -520,7 +522,8 @@ echo -e "    -H 'Content-Type: application/json' \\"
 echo -e "    -d '{\"username\": \"alice\"}'"
 echo ""
 echo -e "  ${CYAN}# Get Hiddify subscription URL${NC}"
-echo -e "  https://${DOMAIN}:${API_PORT}/sub/alice?server_domain=${DOMAIN}"
+echo -e "  curl -sk -H 'X-API-Secret: <read it from .env.local>' \\"
+echo -e "    'https://${DOMAIN}:${API_PORT}/sub/alice?server_domain=${DOMAIN}'"
 echo ""
 echo -e "  ${CYAN}# Check container status${NC}"
 echo -e "  docker compose -f ${INSTALL_DIR}/docker-compose.yml ps"

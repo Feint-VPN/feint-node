@@ -26,6 +26,8 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 
 FROM alpine:3.21
 
+LABEL org.opencontainers.image.source="https://github.com/Feint-VPN/feint-node"
+
 RUN apk add --no-cache ca-certificates tzdata
 
 COPY --from=builder /out/sing-box /usr/local/bin/sing-box

@@ -248,7 +248,8 @@ The node can optionally produce a Hiddify-compatible Base64 payload from its
 locally configured protocols.
 
 ```bash
-curl https://vpn.example.com:8337/sub/username
+curl -H "X-API-Secret: $API_SECRET" \
+  https://vpn.example.com:8337/sub/username
 ```
 
 The payload contains newline-separated connection URIs before Base64 encoding.
@@ -289,7 +290,8 @@ bash scripts/ports.sh set --api 8337 --vless 28473 --apply
 sudo ./scripts/setup-firewall.sh
 ```
 
-`--apply` stages `.env.local`, validates conflicts and duplicates, updates the
+Without `--apply`, the command only previews a validated port plan. `--apply`
+updates `.env.local`, validates conflicts and duplicates, updates the
 persisted sing-box configuration, restarts affected services, checks health and
 restores the previous configuration if the rollout fails.
 
