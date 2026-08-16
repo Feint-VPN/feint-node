@@ -164,6 +164,8 @@ restore_ports() {
     cp "$env_backup" "$ENV_FILE" || failed=true
     "${COMPOSE[@]}" up -d --force-recreate vpn-node-api || failed=true
     "${COMPOSE[@]}" cp "$config_backup" "vpn-node-api:${CONFIG_PATH:-/opt/sing-box/config.json}" || failed=true
+    "${COMPOSE[@]}" exec -T --user root vpn-node-api sh -c \
+        "chown 1000:1000 '${CONFIG_PATH:-/opt/sing-box/config.json}' && chmod 600 '${CONFIG_PATH:-/opt/sing-box/config.json}'" || failed=true
     "${COMPOSE[@]}" restart sing-box || failed=true
     [[ "$failed" == false ]]
 }

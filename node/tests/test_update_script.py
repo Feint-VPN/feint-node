@@ -22,6 +22,9 @@ def test_update_script_has_a_small_transactional_flow():
     assert 'git reset --hard "$OLD_COMMIT"' in content
     assert 'cp "$ENV_BACKUP" "$ENV_FILE"' in content
     assert 'cp "$CONFIG_BACKUP"' in content
+    assert "exec -T --user root vpn-node-api" in content
+    assert "chown 1000:1000" in content
+    assert "chmod 600" in content
     assert "pull certbot sing-box vpn-node-api" in content
     assert "ghcr.io/feint-vpn/feint-sing-box:v1.13.12-feint.1" in content
     assert "up -d --no-build --remove-orphans" in content

@@ -86,6 +86,8 @@ rollback() {
     restore_image "$OLD_CERTBOT_IMAGE" "$CERTBOT_IMAGE"
     "${COMPOSE[@]}" up -d --no-build --remove-orphans
     "${COMPOSE[@]}" cp "$CONFIG_BACKUP" "vpn-node-api:${CONFIG_PATH:-/opt/sing-box/config.json}"
+    "${COMPOSE[@]}" exec -T --user root vpn-node-api sh -c \
+        "chown 1000:1000 '${CONFIG_PATH:-/opt/sing-box/config.json}' && chmod 600 '${CONFIG_PATH:-/opt/sing-box/config.json}'"
     "${COMPOSE[@]}" restart sing-box
     if wait_for_status; then
         error "Previous deployment restored"

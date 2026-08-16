@@ -33,3 +33,6 @@ def test_port_command_has_an_atomic_apply_path():
     assert "Ports staged in" not in content
     assert "Port change applied successfully" in content
     assert "previous configuration was restored" in content
+    assert "exec -T --user root vpn-node-api" in content
+    assert "chown 1000:1000" in content
+    assert "chmod 600" in content
