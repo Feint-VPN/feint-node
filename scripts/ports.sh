@@ -148,14 +148,18 @@ PY
 }
 
 wait_for_status() {
-    local url="$1" api_secret="$2"
+    local scheme=http response=""
+    [[ "$(env_get API_USE_SSL "$ENV_FILE" true)" == true ]] && scheme=https
+    local url="${scheme}://127.0.0.1:$(env_get API_PORT "$ENV_FILE")/status"
+    local api_secret="$(env_get API_SECRET "$ENV_FILE")"
     for _ in {1..60}; do
-        if curl -skf -H "X-API-Secret: ${api_secret}" "$url" \
-            | grep -q '"status":"ok"'; then
+        response="$(curl -skf -H "X-API-Secret: ${api_secret}" "$url" || true)"
+        if grep -q '"status":"ok"' <<< "$response"; then
             return 0
         fi
         sleep 1
     done
+    printf 'Last API status: %s\n' "${response:-unavailable}" >&2
     return 1
 }
 
@@ -171,24 +175,18 @@ restore_ports() {
 }
 
 apply_ports() {
-    local staged="$1" env_backup config_backup status_url api_secret
+    local staged="$1" env_backup config_backup
     "${COMPOSE[@]}" ps -q vpn-node-api | grep -q . || die "vpn-node-api is not running; start the stack before applying port changes"
     env_backup="$(mktemp "${ENV_FILE}.backup.XXXXXX")"
     config_backup="$(mktemp "${ENV_FILE}.config.XXXXXX")"
     cp "$ENV_FILE" "$env_backup"
     "${COMPOSE[@]}" exec -T vpn-node-api cat "${CONFIG_PATH:-/opt/sing-box/config.json}" > "$config_backup"
-    api_secret="$(env_get API_SECRET "$staged")"
-    if [[ "$(env_get API_USE_SSL "$staged" true)" == true ]]; then
-        status_url="https://127.0.0.1:$(env_get API_PORT "$staged")/status"
-    else
-        status_url="http://127.0.0.1:$(env_get API_PORT "$staged")/status"
-    fi
     if ! cp "$staged" "$ENV_FILE" \
         || ! "${COMPOSE[@]}" up -d --force-recreate vpn-node-api \
         || ! render_singbox_ports \
         || ! "${COMPOSE[@]}" exec -T sing-box sing-box check -c /opt/sing-box/config.json \
         || ! "${COMPOSE[@]}" restart sing-box \
-        || ! wait_for_status "$status_url" "$api_secret"; then
+        || ! wait_for_status; then
         if restore_ports "$env_backup" "$config_backup"; then
             rm -f "$staged" "$env_backup" "$config_backup"
             die "Port change failed; previous configuration was restored"
