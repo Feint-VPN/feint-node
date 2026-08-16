@@ -437,7 +437,7 @@ fi
 info "Validating sing-box config..."
 if ! compose run --rm --no-deps \
     -v "$SINGBOX_CONFIG:/tmp/config.json:ro" \
-    sing-box check -c /tmp/config.json; then
+    sing-box check -c /tmp/config.json </dev/null; then
     die "Generated sing-box config is invalid"
 fi
 
