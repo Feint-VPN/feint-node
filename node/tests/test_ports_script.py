@@ -1,21 +1,12 @@
-"""Regression checks for the port-command compatibility wrapper."""
+"""Regression checks for the canonical port command."""
 
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-LEGACY_SCRIPT = ROOT / "scripts" / "generate-ports.sh"
 PORTS_SCRIPT = ROOT / "scripts" / "ports.sh"
 
 
-def test_legacy_generator_delegates_to_the_canonical_port_command():
-    content = LEGACY_SCRIPT.read_text(encoding="utf-8")
-
-    assert LEGACY_SCRIPT.is_file()
-    assert content.startswith("#!/usr/bin/env bash")
-    assert 'exec bash "$SCRIPT_DIR/ports.sh" randomize "$@"' in content
-
-
-def test_canonical_port_command_checks_conflicts_and_duplicates():
+def test_port_command_checks_conflicts_and_duplicates():
     content = PORTS_SCRIPT.read_text(encoding="utf-8")
 
     assert PORTS_SCRIPT.is_file()
@@ -28,9 +19,17 @@ def test_canonical_port_command_checks_conflicts_and_duplicates():
     assert '[[ -z "${generated[$used_key]:-}" ]] && break' in content
 
 
-def test_canonical_port_command_has_an_atomic_apply_path():
+def test_port_command_has_an_atomic_apply_path():
     content = PORTS_SCRIPT.read_text(encoding="utf-8")
 
     assert "--apply" in content
+    assert 'apply_ports "$staged"' in content
+    assert 'cp "$staged" "$ENV_FILE"' in content
+    assert 'cp "$ENV_FILE" "$env_backup"' in content
+    assert content.index('cp "$ENV_FILE" "$env_backup"') < content.index(
+        'cp "$staged" "$ENV_FILE"'
+    )
+    assert 'show_ports "$staged"' in content
+    assert "Ports staged in" not in content
     assert "Port change applied successfully" in content
     assert "previous configuration was restored" in content

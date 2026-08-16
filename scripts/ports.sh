@@ -26,10 +26,10 @@ Usage:
                        [--shadowsocks PORT] [--apply] [--dir DIR]
   scripts/ports.sh randomize [--apply] [--dir DIR]
 
-`set` and `randomize` only stage `.env.local` unless `--apply` is given.
-`--apply` updates the persisted sing-box config, recreates the API container,
-restarts sing-box, health-checks the API, and restores the previous values if
-that operation fails. No process is ever killed to free a port.
+Without `--apply`, `set` and `randomize` only print the validated port plan.
+`--apply` atomically updates `.env.local` and the persisted sing-box config,
+restarts the affected services, and restores both files if the operation fails.
+No process is ever killed to free a port.
 EOF
 }
 
@@ -58,9 +58,9 @@ port_check_tool_available || die "Port checks require iproute2 (ss) or net-tools
 COMPOSE=(docker compose --env-file "$ENV_FILE" -f "$INSTALL_DIR/docker-compose.yml")
 
 show_ports() {
-    local key value protocol
+    local file="${1:-$ENV_FILE}" key value protocol
     for key in "${PORT_KEYS[@]}"; do
-        value="$(env_get "$key" "$ENV_FILE")"
+        value="$(env_get "$key" "$file")"
         protocol="$(port_protocol "$key")"
         printf '%-18s %5s/%s\n' "$key" "$value" "$protocol"
     done
@@ -147,34 +147,51 @@ temporary.replace(path)
 PY
 }
 
+wait_for_status() {
+    local url="$1" api_secret="$2"
+    for _ in {1..30}; do
+        if curl -skf -H "X-API-Secret: ${api_secret}" "$url" \
+            | grep -q '"status":"ok"'; then
+            return 0
+        fi
+        sleep 1
+    done
+    return 1
+}
+
+restore_ports() {
+    local env_backup="$1" config_backup="$2" failed=false
+    cp "$env_backup" "$ENV_FILE" || failed=true
+    "${COMPOSE[@]}" up -d --force-recreate vpn-node-api || failed=true
+    "${COMPOSE[@]}" cp "$config_backup" "vpn-node-api:${CONFIG_PATH:-/opt/sing-box/config.json}" || failed=true
+    "${COMPOSE[@]}" restart sing-box || failed=true
+    [[ "$failed" == false ]]
+}
+
 apply_ports() {
-    local env_backup config_backup health_url curl_args api_secret
+    local staged="$1" env_backup config_backup status_url api_secret
     "${COMPOSE[@]}" ps -q vpn-node-api | grep -q . || die "vpn-node-api is not running; start the stack before applying port changes"
     env_backup="$(mktemp "${ENV_FILE}.backup.XXXXXX")"
     config_backup="$(mktemp "${ENV_FILE}.config.XXXXXX")"
     cp "$ENV_FILE" "$env_backup"
     "${COMPOSE[@]}" exec -T vpn-node-api cat "${CONFIG_PATH:-/opt/sing-box/config.json}" > "$config_backup"
-    if ! "${COMPOSE[@]}" up -d --force-recreate vpn-node-api \
-        || ! render_singbox_ports \
-        || ! "${COMPOSE[@]}" restart sing-box; then
-        cp "$env_backup" "$ENV_FILE"
-        "${COMPOSE[@]}" cp "$config_backup" "vpn-node-api:${CONFIG_PATH:-/opt/sing-box/config.json}" || true
-        "${COMPOSE[@]}" up -d --force-recreate vpn-node-api || true
-        "${COMPOSE[@]}" restart sing-box || true
-        die "Port change failed; previous configuration was restored"
-    fi
-    if [[ "$(env_get API_USE_SSL "$ENV_FILE" true)" == true ]]; then
-        health_url="https://127.0.0.1:$(env_get API_PORT "$ENV_FILE")/health"; curl_args=(-sk)
+    api_secret="$(env_get API_SECRET "$staged")"
+    if [[ "$(env_get API_USE_SSL "$staged" true)" == true ]]; then
+        status_url="https://127.0.0.1:$(env_get API_PORT "$staged")/status"
     else
-        health_url="http://127.0.0.1:$(env_get API_PORT "$ENV_FILE")/health"; curl_args=(-s)
+        status_url="http://127.0.0.1:$(env_get API_PORT "$staged")/status"
     fi
-    api_secret="$(env_get API_SECRET "$ENV_FILE")"
-    if ! curl "${curl_args[@]}" --fail -H "X-API-Secret: ${api_secret}" "$health_url" >/dev/null; then
-        cp "$env_backup" "$ENV_FILE"
-        "${COMPOSE[@]}" cp "$config_backup" "vpn-node-api:${CONFIG_PATH:-/opt/sing-box/config.json}" || true
-        "${COMPOSE[@]}" up -d --force-recreate vpn-node-api || true
-        "${COMPOSE[@]}" restart sing-box || true
-        die "Health check failed; previous configuration was restored"
+    if ! cp "$staged" "$ENV_FILE" \
+        || ! "${COMPOSE[@]}" up -d --force-recreate vpn-node-api \
+        || ! render_singbox_ports \
+        || ! "${COMPOSE[@]}" exec -T sing-box sing-box check -c /opt/sing-box/config.json \
+        || ! "${COMPOSE[@]}" restart sing-box \
+        || ! wait_for_status "$status_url" "$api_secret"; then
+        if restore_ports "$env_backup" "$config_backup"; then
+            rm -f "$staged" "$env_backup" "$config_backup"
+            die "Port change failed; previous configuration was restored"
+        fi
+        die "Port change failed and rollback was incomplete; backups were preserved"
     fi
     rm -f "$env_backup" "$config_backup"
     info "Port change applied successfully"
@@ -188,13 +205,15 @@ case "$COMMAND" in
         (( ${#REQUESTED[@]} > 0 )) || die "No port values were provided"
         staged="$(validate_requested)"
         if [[ "$APPLY" == true ]]; then
-            cp "$staged" "$ENV_FILE"; rm -f "$staged"; apply_ports
+            apply_ports "$staged"
         else
-            cp "$staged" "$ENV_FILE"; rm -f "$staged"
-            info "Ports staged in $ENV_FILE. Run '$0 apply --dir $INSTALL_DIR' to render and restart."
+            info "Proposed ports (not applied):"
+            show_ports "$staged"
         fi
-        show_ports
+        rm -f "$staged"
+        if [[ "$APPLY" == true ]]; then
+            show_ports
+        fi
         ;;
-    apply) apply_ports ;;
     *) usage; exit 1 ;;
 esac

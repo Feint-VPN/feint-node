@@ -4,7 +4,8 @@ import json
 import re
 from pathlib import Path
 
-TEMPLATE = Path("../templates/sing-box.json.tpl")
+ROOT = Path(__file__).resolve().parents[2]
+TEMPLATE = ROOT / "templates" / "sing-box.json.tpl"
 TEMPLATE_VALUES = {
     "DOMAIN": "vpn.example.com",
     "VLESS_PORT": "11001",
@@ -29,14 +30,14 @@ def render_template() -> dict:
 
 
 def test_install_script_uses_canonical_repository_and_branch():
-    content = Path("../install.sh").read_text(encoding="utf-8")
+    content = (ROOT / "install.sh").read_text(encoding="utf-8")
 
     assert 'REPO_URL="https://github.com/Feint-VPN/feint-node.git"' in content
     assert 'BRANCH="main"' in content
 
 
 def test_install_script_generates_secrets_safely_with_pipefail():
-    script_path = Path("../install.sh")
+    script_path = ROOT / "install.sh"
     content = script_path.read_text(encoding="utf-8")
 
     assert "set +o pipefail" in content, (
@@ -48,7 +49,7 @@ def test_install_script_generates_secrets_safely_with_pipefail():
 
 
 def test_install_script_rejects_an_existing_install_before_mutation():
-    content = Path("../install.sh").read_text(encoding="utf-8")
+    content = (ROOT / "install.sh").read_text(encoding="utf-8")
 
     guard = 'if [[ -f "$INSTALL_DIR/.env.local" ]]; then'
     assert guard in content
@@ -58,7 +59,7 @@ def test_install_script_rejects_an_existing_install_before_mutation():
 
 
 def test_install_script_command_runner_preserves_failures():
-    content = Path("../install.sh").read_text(encoding="utf-8")
+    content = (ROOT / "install.sh").read_text(encoding="utf-8")
 
     assert '"$@" 2>&1 | sed' in content
     assert 'done < <("$@" 2>&1)' not in content
@@ -66,7 +67,7 @@ def test_install_script_command_runner_preserves_failures():
 
 
 def test_install_script_never_prints_the_api_secret():
-    script_path = Path("../install.sh")
+    script_path = ROOT / "install.sh"
     content = script_path.read_text(encoding="utf-8")
 
     assert 'echo -e "  ${BOLD}API Secret:${NC}"' not in content
@@ -75,7 +76,7 @@ def test_install_script_never_prints_the_api_secret():
 
 
 def test_install_script_pulls_prebuilt_service_images():
-    script_path = Path("../install.sh")
+    script_path = ROOT / "install.sh"
     content = script_path.read_text(encoding="utf-8")
 
     assert "compose pull vpn-node-api sing-box" in content, (
@@ -92,7 +93,7 @@ def test_install_script_pulls_prebuilt_service_images():
 
 
 def test_compose_uses_a_pinned_official_singbox_image():
-    compose_path = Path("../docker-compose.yml")
+    compose_path = ROOT / "docker-compose.yml"
     content = compose_path.read_text(encoding="utf-8")
 
     assert "image: ${SINGBOX_IMAGE:-ghcr.io/sagernet/sing-box:v1.13.12}" in content
@@ -100,7 +101,7 @@ def test_compose_uses_a_pinned_official_singbox_image():
 
 
 def test_compose_uses_published_node_image():
-    content = Path("../docker-compose.yml").read_text(encoding="utf-8")
+    content = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
 
     assert "image: ${NODE_IMAGE:-ghcr.io/feint-vpn/feint-node:latest}" in content
     assert (
@@ -110,7 +111,7 @@ def test_compose_uses_published_node_image():
 
 
 def test_install_script_writes_stats_runtime_env_values():
-    script_path = Path("../install.sh")
+    script_path = ROOT / "install.sh"
     content = script_path.read_text(encoding="utf-8")
 
     assert "CLASH_API_SECRET" in content, "install.sh must provision CLASH_API_SECRET"
@@ -162,7 +163,7 @@ def test_singbox_template_has_only_supported_placeholders():
 
 
 def test_install_script_renders_and_validates_template_before_persisting():
-    content = Path("../install.sh").read_text(encoding="utf-8")
+    content = (ROOT / "install.sh").read_text(encoding="utf-8")
 
     assert 'SINGBOX_TEMPLATE="$INSTALL_DIR/templates/sing-box.json.tpl"' in content
     assert "replace_config_value VLESS_PORT" in content

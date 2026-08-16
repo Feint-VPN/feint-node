@@ -289,7 +289,8 @@ bash scripts/ports.sh set --api 8337 --vless 28473 --apply
 sudo ./scripts/setup-firewall.sh
 ```
 
-`--apply` stages `.env.local`, validates conflicts and duplicates, updates the
+Without `--apply`, the command only previews a validated port plan. `--apply`
+updates `.env.local`, validates conflicts and duplicates, updates the
 persisted sing-box configuration, restarts affected services, checks health and
 restores the previous configuration if the rollout fails.
 

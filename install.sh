@@ -134,20 +134,6 @@ gen_secret() {
     printf '%s' "$secret"
 }
 
-# Wait until a URL returns HTTP 200 (or until timeout)
-wait_for_http() {
-    local url="$1" timeout="${2:-60}"
-    info "Waiting for $url ..."
-    local elapsed=0
-    while [[ $elapsed -lt $timeout ]]; do
-        if curl -sk -o /dev/null -w "%{http_code}" "$url" | grep -q "200"; then
-            return 0
-        fi
-        sleep 3; elapsed=$((elapsed + 3))
-    done
-    return 1
-}
-
 # Stream command output without hiding its exit status.
 run() {
     "$@" 2>&1 | sed 's/^/  │ /'

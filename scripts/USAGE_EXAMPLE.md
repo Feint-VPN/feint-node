@@ -37,7 +37,9 @@ cd /opt/vpn-node
 sudo ./scripts/setup-firewall.sh
 ```
 
-The firewall script reads the selected values from `.env.local`.
+The firewall script reads the selected values from `.env.local`, moves SSH to a
+new port, and closes every other host port. Keep the original terminal open and
+confirm a second SSH session when prompted.
 
 ## 4. Verify the node
 

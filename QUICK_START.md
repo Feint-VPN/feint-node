@@ -54,69 +54,18 @@ cd /opt/vpn-node
 sudo bash ./update.sh --branch main
 ```
 
-The updater preserves `.env.local`, reapplies local runtime settings, pulls the published node and sing-box images, migrates the persisted stats config, and runs local health and stats reachability checks.
+The updater preserves `.env.local` and existing users, applies the latest
+sing-box template, validates it, pulls the published images, and waits for the
+authenticated `/status` readiness check. A failed rollout restores the previous
+commit, images and runtime configuration.
 
 ---
 
-## Manual install (alternative)
-
-If you prefer full control, follow these steps instead.
-
-### Prerequisites
-
-| Requirement                 | Notes                              |
-| --------------------------- | ---------------------------------- |
-| Ubuntu 22.04 / 24.04 VPS    | Fresh server recommended           |
-| A domain pointed at the VPS | e.g. `vpn.example.com` → server IP |
-| Root / sudo access          | Docker is installed by the script  |
-
-### 1 · Clone & configure
+## Verify everything is running
 
 ```bash
-git clone https://github.com/Feint-VPN/feint-node.git /opt/vpn-node
 cd /opt/vpn-node
-cp .env.example .env.local
-```
-
-Edit `.env.local` — the only fields you **must** set:
-
-```bash
-DOMAIN=vpn.example.com          # your domain
-CERTBOT_EMAIL=you@example.com   # Let's Encrypt notifications
-API_SECRET=change-me-now        # strong random secret for the API
-```
-
-Everything else has sensible defaults (ports, container names, etc.).
-
-### 2 · Run the init script
-
-```bash
-chmod +x scripts/init-node.sh
-sudo scripts/init-node.sh
-```
-
-The script will:
-
-1. Install Docker (if missing)
-2. Generate all cryptographic keys (Reality x25519, Shadowsocks PSK, passwords)
-3. Write `templates/config.json` for sing-box
-4. Obtain a Let's Encrypt TLS certificate
-5. Start all containers: `sing-box`, `vpn-node-api`, `certbot`
-
-When it finishes you'll see:
-
-```
-✅ Node is ready — API: https://vpn.example.com:8337
-```
-
----
-
-## 3 · Verify everything is running
-
-```bash
-docker compose ps          # all 3 containers should be "Up"
-curl -sk https://vpn.example.com:8337/health
-# → {"status":"ok"}
+sudo bash scripts/diagnose.sh
 ```
 
 ---

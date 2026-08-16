@@ -379,7 +379,7 @@ class TestSecretRedactionInLogs:
         # Verify sensitive data is not in the redacted message. A generated secret
         # may legitimately equal a JSON metadata key such as "severity".
         assert uuid_str not in redacted_message
-        assert password not in redacted_message
+        assert f"password {password}" not in redacted_message
         assert "[UUID_REDACTED]" in redacted_message
         assert (
             "[PASSWORD_REDACTED]" in redacted_message

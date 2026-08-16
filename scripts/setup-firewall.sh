@@ -1,280 +1,193 @@
-#!/bin/bash
-# Feint VPN Node - UFW Firewall Setup Script
-# Configures firewall rules and optionally changes SSH port
+#!/usr/bin/env bash
+# Lock the host to Feint ports and move SSH to a verified non-default port.
+set -Eeuo pipefail
 
-set -e
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
+info()    { echo -e "${BLUE}ℹ${NC}  $*"; }
+success() { echo -e "${GREEN}✓${NC}  $*"; }
+warn()    { echo -e "${YELLOW}⚠${NC}  $*"; }
+error()   { echo -e "${RED}✗${NC}  $*" >&2; }
+die()     { error "$*"; exit 1; }
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-NC='\033[0m' # No Color
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INSTALL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+ENV_FILE="$INSTALL_DIR/.env.local"
+NEW_SSH_PORT=""
 
-print_header() {
-    echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BOLD}${CYAN}  $1${NC}"
-    echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+usage() {
+    cat <<EOF
+Usage: sudo $0 [--ssh-port PORT] [--dir DIR]
+
+The SSH port is always changed. Without --ssh-port, a free random port is used.
+Keep this terminal open and confirm a second SSH connection when prompted.
+EOF
 }
 
-print_info() {
-    echo -e "${BLUE}ℹ${NC} $1"
-}
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --ssh-port) [[ $# -ge 2 ]] || die "--ssh-port requires a value"; NEW_SSH_PORT="$2"; shift 2 ;;
+        --dir) [[ $# -ge 2 ]] || die "--dir requires a value"; INSTALL_DIR="$2"; ENV_FILE="$2/.env.local"; shift 2 ;;
+        -h|--help) usage; exit 0 ;;
+        *) die "Unknown argument: $1" ;;
+    esac
+done
 
-print_success() {
-    echo -e "${GREEN}✓${NC} $1"
-}
+[[ $EUID -eq 0 ]] || die "Run as root"
+[[ -f "$ENV_FILE" ]] || die "Missing runtime configuration: $ENV_FILE"
+[[ -f /etc/ssh/sshd_config ]] || die "OpenSSH server is not installed"
+command -v sshd >/dev/null || die "sshd is required"
+command -v systemctl >/dev/null || die "systemd is required"
 
-print_error() {
-    echo -e "${RED}✗${NC} $1"
-}
+source "$INSTALL_DIR/scripts/lib/ports.sh"
+port_check_tool_available || die "Port checks require iproute2 (ss)"
+port_require_unique_config "$ENV_FILE" || exit 1
 
-print_warning() {
-    echo -e "${YELLOW}⚠${NC} $1"
-}
+API_PORT="$(env_get API_PORT "$ENV_FILE")"
+VLESS_PORT="$(env_get VLESS_PORT "$ENV_FILE")"
+VMESS_PORT="$(env_get VMESS_PORT "$ENV_FILE")"
+TROJAN_PORT="$(env_get TROJAN_PORT "$ENV_FILE")"
+HYSTERIA2_PORT="$(env_get HYSTERIA2_PORT "$ENV_FILE")"
+SHADOWSOCKS_PORT="$(env_get SHADOWSOCKS_PORT "$ENV_FILE")"
+ssh_connection="${SSH_CONNECTION:-}"
+OLD_SSH_PORT="${ssh_connection##* }"
+if ! port_validate "$OLD_SSH_PORT"; then
+    OLD_SSH_PORT="$(sshd -T | awk '$1 == "port" { print $2; exit }')"
+fi
+[[ -n "$OLD_SSH_PORT" ]] || die "Could not determine the current SSH port"
 
-# Check if running as root
-if [ "$EUID" -ne 0 ]; then
-    print_error "This script must be run as root"
-    echo "Please run: sudo $0"
-    exit 1
+reserved=(80 "$OLD_SSH_PORT" "$API_PORT" "$VLESS_PORT" "$VMESS_PORT" "$TROJAN_PORT" "$HYSTERIA2_PORT" "$SHADOWSOCKS_PORT")
+if [[ -z "$NEW_SSH_PORT" ]]; then
+    NEW_SSH_PORT="$(port_find_free_unique tcp 20000 60000 "${reserved[@]}")" \
+        || die "Could not find a free SSH port"
+else
+    port_validate "$NEW_SSH_PORT" && (( NEW_SSH_PORT >= 1024 )) \
+        || die "SSH port must be between 1024 and 65535"
+    [[ "$NEW_SSH_PORT" != "$OLD_SSH_PORT" ]] || die "SSH port must change"
+    for port in "${reserved[@]}"; do
+        [[ "$NEW_SSH_PORT" != "$port" ]] || die "SSH port conflicts with reserved port $port"
+    done
+    port_require_available tcp "$NEW_SSH_PORT" "SSH port" || exit 1
 fi
 
-echo ""
-print_header "Feint VPN Node - Firewall Setup"
-echo ""
-
-# Check if UFW is installed
-if ! command -v ufw &> /dev/null; then
-    print_warning "UFW is not installed. Installing..."
+if ! command -v ufw >/dev/null; then
+    info "Installing UFW"
     apt-get update
-    apt-get install -y ufw
-    print_success "UFW installed"
+    apt-get install -y --no-install-recommends ufw
+fi
+if grep -q '^IPV6=' /etc/default/ufw; then
+    sed -i 's/^IPV6=.*/IPV6=yes/' /etc/default/ufw
+else
+    printf 'IPV6=yes\n' >> /etc/default/ufw
 fi
 
-# Get current SSH port
-CURRENT_SSH_PORT=$(grep "^Port " /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}')
-if [ -z "$CURRENT_SSH_PORT" ]; then
-    CURRENT_SSH_PORT=22
+SSH_DROPIN=/etc/ssh/sshd_config.d/00-feint-port.conf
+SSH_BACKUP_DIR=/etc/ssh/feint-backups
+SSH_BACKUP="$SSH_BACKUP_DIR/sshd-$(date -u '+%Y%m%d-%H%M%S').tar"
+mkdir -p "$SSH_BACKUP_DIR"
+if [[ -d /etc/ssh/sshd_config.d ]]; then
+    tar -C / -cpf "$SSH_BACKUP" etc/ssh/sshd_config etc/ssh/sshd_config.d
+else
+    tar -C / -cpf "$SSH_BACKUP" etc/ssh/sshd_config
 fi
 
-echo "Current SSH port: $CURRENT_SSH_PORT"
-echo ""
+SSH_CHANGED=false
+FIREWALL_CHANGED=false
 
-# Ask if user wants to change SSH port
-read -p "Do you want to change SSH port? (recommended for security) [y/N]: " -n 1 -r
-echo
-CHANGE_SSH_PORT=false
-NEW_SSH_PORT=$CURRENT_SSH_PORT
-
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    CHANGE_SSH_PORT=true
-    
-    # Suggest a random port between 10000-65000
-    SUGGESTED_PORT=$((10000 + RANDOM % 55000))
-    
-    echo ""
-    print_info "Suggested SSH port: $SUGGESTED_PORT"
-    read -p "Enter new SSH port [$SUGGESTED_PORT]: " INPUT_PORT
-    
-    if [ -z "$INPUT_PORT" ]; then
-        NEW_SSH_PORT=$SUGGESTED_PORT
+restart_ssh() {
+    systemctl daemon-reload
+    if systemctl is-active --quiet ssh.socket; then
+        systemctl restart ssh.socket
+    elif systemctl list-unit-files ssh.service >/dev/null 2>&1; then
+        systemctl restart ssh.service
     else
-        NEW_SSH_PORT=$INPUT_PORT
+        systemctl restart sshd.service
     fi
-    
-    # Validate port number
-    if ! [[ "$NEW_SSH_PORT" =~ ^[0-9]+$ ]] || [ "$NEW_SSH_PORT" -lt 1024 ] || [ "$NEW_SSH_PORT" -gt 65535 ]; then
-        print_error "Invalid port number. Must be between 1024 and 65535"
-        exit 1
-    fi
-    
-    # Check if port is already in use
-    if netstat -tuln | grep -q ":$NEW_SSH_PORT "; then
-        print_error "Port $NEW_SSH_PORT is already in use"
-        exit 1
-    fi
+}
+
+configure_firewall() {
+    local ssh_port="$1" transition_port="${2:-}"
+    ufw --force reset >/dev/null
+    ufw default deny incoming
+    ufw default deny routed
+    ufw default allow outgoing
+    ufw allow "$ssh_port/tcp" comment 'Feint SSH'
+    [[ -z "$transition_port" ]] || ufw allow "$transition_port/tcp" comment 'Feint SSH transition'
+    ufw allow 80/tcp comment 'Feint ACME'
+    ufw allow "$API_PORT/tcp" comment 'Feint API'
+    ufw allow "$VLESS_PORT/tcp" comment 'Feint VLESS'
+    ufw allow "$VMESS_PORT/tcp" comment 'Feint VMess'
+    ufw allow "$TROJAN_PORT/tcp" comment 'Feint Trojan'
+    ufw allow "$HYSTERIA2_PORT/udp" comment 'Feint Hysteria2'
+    ufw allow "$SHADOWSOCKS_PORT/tcp" comment 'Feint Shadowsocks'
+    ufw allow "$SHADOWSOCKS_PORT/udp" comment 'Feint Shadowsocks'
+    ufw --force enable >/dev/null
+}
+
+restore_ssh() {
+    rm -f "$SSH_DROPIN"
+    tar -C / -xpf "$SSH_BACKUP"
+    sshd -t
+}
+
+rollback() {
+    local status=$?
+    (( status != 0 )) || status=1
+    trap - ERR INT TERM
+    set +e
+    error "Firewall setup failed; restoring SSH on port $OLD_SSH_PORT"
+    [[ "$SSH_CHANGED" == false ]] || restore_ssh
+    [[ "$FIREWALL_CHANGED" == false ]] || configure_firewall "$OLD_SSH_PORT"
+    restart_ssh
+    exit "$status"
+}
+trap rollback ERR INT TERM
+
+info "Moving SSH from $OLD_SSH_PORT to $NEW_SSH_PORT"
+mkdir -p /etc/ssh/sshd_config.d
+SSH_CHANGED=true
+while IFS= read -r -d '' config; do
+    sed -i -E 's/^([[:space:]]*)Port([[:space:]]+)/# Feint disabled Port /' "$config"
+done < <(find /etc/ssh -maxdepth 2 -type f \( -name sshd_config -o -path '/etc/ssh/sshd_config.d/*.conf' \) -print0)
+if ! grep -qE '^[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config\.d/\*\.conf' /etc/ssh/sshd_config; then
+    sed -i '1i Include /etc/ssh/sshd_config.d/*.conf' /etc/ssh/sshd_config
+fi
+printf 'Port %s\n' "$NEW_SSH_PORT" > "$SSH_DROPIN"
+
+sshd -t
+mapfile -t effective_ports < <(sshd -T | awk '$1 == "port" { print $2 }')
+if [[ ${#effective_ports[@]} -ne 1 || "${effective_ports[0]}" != "$NEW_SSH_PORT" ]]; then
+    error "The effective SSH configuration did not select only $NEW_SSH_PORT"
+    false
 fi
 
-echo ""
-print_header "Firewall Configuration Summary"
-echo ""
+info "Closing host ports outside the Feint allowlist"
+FIREWALL_CHANGED=true
+configure_firewall "$NEW_SSH_PORT" "$OLD_SSH_PORT"
+restart_ssh
 
-# Check if .env.local exists to read ports
-if [ -f .env.local ]; then
-    print_info "Reading port configuration from .env.local..."
-    
-    # Read ports from .env.local
-    API_PORT=$(grep "^API_PORT=" .env.local 2>/dev/null | cut -d '=' -f2 | tr -d '"' | tr -d "'")
-    VLESS_PORT=$(grep "^VLESS_PORT=" .env.local 2>/dev/null | cut -d '=' -f2 | tr -d '"' | tr -d "'")
-    VMESS_PORT=$(grep "^VMESS_PORT=" .env.local 2>/dev/null | cut -d '=' -f2 | tr -d '"' | tr -d "'")
-    TROJAN_PORT=$(grep "^TROJAN_PORT=" .env.local 2>/dev/null | cut -d '=' -f2 | tr -d '"' | tr -d "'")
-    HYSTERIA2_PORT=$(grep "^HYSTERIA2_PORT=" .env.local 2>/dev/null | cut -d '=' -f2 | tr -d '"' | tr -d "'")
-    SHADOWSOCKS_PORT=$(grep "^SHADOWSOCKS_PORT=" .env.local 2>/dev/null | cut -d '=' -f2 | tr -d '"' | tr -d "'")
-    CERTBOT_PORT=$(grep "^CERTBOT_PORT=" .env.local 2>/dev/null | cut -d '=' -f2 | tr -d '"' | tr -d "'")
+for _ in {1..10}; do
+    port_is_in_use tcp "$NEW_SSH_PORT" && break
+    sleep 1
+done
+if ! port_is_in_use tcp "$NEW_SSH_PORT"; then
+    error "SSH is not listening on $NEW_SSH_PORT"
+    false
 fi
 
-# Define default ports if not found in .env.local
-API_PORT=${API_PORT:-8000}
-VLESS_PORT=${VLESS_PORT:-8443}
-VMESS_PORT=${VMESS_PORT:-443}
-TROJAN_PORT=${TROJAN_PORT:-2053}
-HYSTERIA2_PORT=${HYSTERIA2_PORT:-2083}
-SHADOWSOCKS_PORT=${SHADOWSOCKS_PORT:-8388}
-CERTBOT_PORT=${CERTBOT_PORT:-80}
-
-echo -e "  ${BOLD}SSH:${NC}         $NEW_SSH_PORT"
-echo -e "  ${BOLD}API:${NC}         $API_PORT"
-echo -e "  ${BOLD}Certbot:${NC}     $CERTBOT_PORT (HTTP ACME challenge)"
-echo ""
-echo -e "  ${BOLD}VPN Protocols:${NC}"
-echo "    VLESS:       $VLESS_PORT"
-echo "    VMess:       $VMESS_PORT"
-echo "    Trojan:      $TROJAN_PORT"
-echo "    Hysteria2:   $HYSTERIA2_PORT"
-echo "    Shadowsocks: $SHADOWSOCKS_PORT"
-echo ""
-
-read -p "Continue with firewall setup? [y/N]: " -n 1 -r
+warn "Keep this terminal open. In a second terminal, connect with:"
+echo "  ssh -p $NEW_SSH_PORT <user>@<server>"
 echo
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    print_warning "Firewall setup cancelled"
-    exit 0
+read -r -p "Type CONFIRM after the new SSH session works: " confirmation
+if [[ "$confirmation" != CONFIRM ]]; then
+    error "The new SSH connection was not confirmed"
+    false
 fi
 
-echo ""
-print_header "Configuring Firewall"
-echo ""
+ufw --force delete allow "$OLD_SSH_PORT/tcp" >/dev/null
+trap - ERR INT TERM
 
-# Step 1: Change SSH port if requested (BEFORE enabling UFW)
-if [ "$CHANGE_SSH_PORT" = true ] && [ "$NEW_SSH_PORT" != "$CURRENT_SSH_PORT" ]; then
-    print_info "Changing SSH port from $CURRENT_SSH_PORT to $NEW_SSH_PORT..."
-    
-    # Check if sshd_config exists
-    if [ ! -f /etc/ssh/sshd_config ]; then
-        print_error "SSH configuration file not found at /etc/ssh/sshd_config"
-        print_warning "This might be a non-Linux system or SSH is not installed"
-        print_info "Skipping SSH port change..."
-        NEW_SSH_PORT=$CURRENT_SSH_PORT
-        CHANGE_SSH_PORT=false
-    else
-        # Backup sshd_config
-        cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup.$(date +%Y%m%d_%H%M%S)
-        
-        # Update SSH port
-        if grep -q "^Port " /etc/ssh/sshd_config; then
-            sed -i "s/^Port .*/Port $NEW_SSH_PORT/" /etc/ssh/sshd_config
-        else
-            echo "Port $NEW_SSH_PORT" >> /etc/ssh/sshd_config
-        fi
-        
-        # Also update ListenAddress if it exists
-        if grep -q "^#Port " /etc/ssh/sshd_config; then
-            sed -i "s/^#Port .*/Port $NEW_SSH_PORT/" /etc/ssh/sshd_config
-        fi
-        
-        print_success "SSH configuration updated"
-        
-        # Test SSH configuration
-        print_info "Testing SSH configuration..."
-        if sshd -t 2>/dev/null; then
-            print_success "SSH configuration is valid"
-        else
-            print_error "SSH configuration test failed"
-            print_warning "Restoring backup..."
-            cp /etc/ssh/sshd_config.backup.$(date +%Y%m%d)* /etc/ssh/sshd_config 2>/dev/null || true
-            NEW_SSH_PORT=$CURRENT_SSH_PORT
-            CHANGE_SSH_PORT=false
-        fi
-    fi
-fi
-
-# Step 2: Reset UFW to default state
-print_info "Resetting UFW to default state..."
-ufw --force reset > /dev/null 2>&1
-
-# Step 3: Set default policies
-print_info "Setting default policies (deny incoming, allow outgoing)..."
-ufw default deny incoming
-ufw default allow outgoing
-
-# Step 4: Allow SSH on new port FIRST (critical!)
-print_info "Allowing SSH on port $NEW_SSH_PORT..."
-ufw allow $NEW_SSH_PORT/tcp comment 'SSH'
-print_success "SSH port $NEW_SSH_PORT allowed"
-
-# Step 5: Allow API port
-print_info "Allowing API on port $API_PORT..."
-ufw allow $API_PORT/tcp comment 'Feint API'
-
-# Step 6: Allow Certbot port
-print_info "Allowing Certbot on port $CERTBOT_PORT..."
-ufw allow $CERTBOT_PORT/tcp comment 'Certbot ACME'
-
-# Step 7: Allow VPN protocol ports
-print_info "Allowing VPN protocol ports..."
-ufw allow $VLESS_PORT/tcp comment 'VLESS'
-ufw allow $VMESS_PORT/tcp comment 'VMess'
-ufw allow $TROJAN_PORT/tcp comment 'Trojan'
-ufw allow $HYSTERIA2_PORT/udp comment 'Hysteria2'
-ufw allow $SHADOWSOCKS_PORT/tcp comment 'Shadowsocks'
-ufw allow $SHADOWSOCKS_PORT/udp comment 'Shadowsocks'
-
-print_success "All VPN ports configured"
-
-# Step 8: Enable UFW
-print_info "Enabling UFW..."
-echo "y" | ufw enable > /dev/null 2>&1
-print_success "UFW enabled"
-
-# Step 9: Restart SSH if port was changed
-if [ "$CHANGE_SSH_PORT" = true ] && [ "$NEW_SSH_PORT" != "$CURRENT_SSH_PORT" ]; then
-    print_info "Restarting SSH service..."
-    systemctl restart sshd || systemctl restart ssh
-    print_success "SSH service restarted on port $NEW_SSH_PORT"
-fi
-
-# Step 10: Show UFW status
-echo ""
-print_header "Firewall Status"
-echo ""
-ufw status numbered
-
-echo ""
-print_header "Setup Complete"
-echo ""
-
-if [ "$CHANGE_SSH_PORT" = true ] && [ "$NEW_SSH_PORT" != "$CURRENT_SSH_PORT" ]; then
-    print_warning "IMPORTANT: SSH port has been changed!"
-    echo ""
-    echo -e "  ${BOLD}Old SSH port:${NC} $CURRENT_SSH_PORT"
-    echo -e "  ${BOLD}New SSH port:${NC} $NEW_SSH_PORT"
-    echo ""
-    print_warning "Test your SSH connection in a NEW terminal BEFORE closing this one:"
-    echo ""
-    echo -e "  ${CYAN}ssh -p $NEW_SSH_PORT user@your-server${NC}"
-    echo ""
-    print_warning "If you can't connect, you can restore the old configuration:"
-    echo ""
-    echo -e "  ${CYAN}sudo cp /etc/ssh/sshd_config.backup.* /etc/ssh/sshd_config${NC}"
-    echo -e "  ${CYAN}sudo systemctl restart sshd${NC}"
-    echo -e "  ${CYAN}sudo ufw allow $CURRENT_SSH_PORT/tcp${NC}"
-    echo ""
-fi
-
-print_success "Firewall configured successfully!"
-echo ""
-echo "Allowed ports:"
-echo "  SSH:         $NEW_SSH_PORT/tcp"
-echo "  API:         $API_PORT/tcp"
-echo "  Certbot:     $CERTBOT_PORT/tcp"
-echo "  VLESS:       $VLESS_PORT/tcp"
-echo "  VMess:       $VMESS_PORT/tcp"
-echo "  Trojan:      $TROJAN_PORT/tcp"
-echo "  Hysteria2:   $HYSTERIA2_PORT/udp"
-echo "  Shadowsocks: $SHADOWSOCKS_PORT/tcp+udp"
-echo ""
-
-exit 0
+success "SSH moved to $NEW_SSH_PORT"
+success "All non-Feint host ports are closed"
+ufw status verbose
+echo
+warn "SSH backup: $SSH_BACKUP"
