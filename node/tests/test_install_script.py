@@ -66,6 +66,15 @@ def test_install_script_command_runner_preserves_failures():
     assert "run_with_log" not in content
 
 
+def test_install_script_does_not_require_an_interactive_terminal():
+    content = (ROOT / "install.sh").read_text(encoding="utf-8")
+
+    assert 'if [[ -t 1 && -n "${TERM:-}" ]]; then' in content
+    assert content.index('if [[ -t 1 && -n "${TERM:-}" ]]; then') < content.index(
+        "    clear"
+    )
+
+
 def test_install_script_never_prints_the_api_secret():
     script_path = ROOT / "install.sh"
     content = script_path.read_text(encoding="utf-8")

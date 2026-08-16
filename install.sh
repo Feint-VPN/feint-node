@@ -88,7 +88,9 @@ if [[ -f "$INSTALL_DIR/.env.local" ]]; then
 fi
 
 # ── banner ────────────────────────────────────────────────────────────────────
-clear
+if [[ -t 1 && -n "${TERM:-}" ]]; then
+    clear
+fi
 echo -e "${BOLD}${CYAN}"
 cat << 'BANNER'
   ███████╗███████╗██╗███╗   ██╗████████╗
