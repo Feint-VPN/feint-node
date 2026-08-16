@@ -89,7 +89,7 @@ rollback() {
     "${COMPOSE[@]}" up -d --no-build --remove-orphans
     "${COMPOSE[@]}" cp "$CONFIG_BACKUP" "vpn-node-api:$CONFIG_PATH"
     "${COMPOSE[@]}" exec -T --user root vpn-node-api sh -c \
-        "chown 1000:1000 '$CONFIG_PATH' && chmod 600 '$CONFIG_PATH'"
+        "chown 1000:1000 '$CONFIG_PATH' && chmod 600 '$CONFIG_PATH'" </dev/null
     "${COMPOSE[@]}" restart sing-box
     if wait_for_status; then
         success "Previous deployment restored"
@@ -104,11 +104,11 @@ sync_template() {
     "${COMPOSE[@]}" cp "$INSTALL_DIR/scripts/sync-singbox.py" "vpn-node-api:$helper"
     "${COMPOSE[@]}" cp "$INSTALL_DIR/templates/sing-box.json.tpl" "vpn-node-api:$template"
     "${COMPOSE[@]}" exec -T vpn-node-api python "$helper" \
-        "$template" "$CONFIG_PATH" "$CONFIG_PATH.next"
+        "$template" "$CONFIG_PATH" "$CONFIG_PATH.next" </dev/null
     "${COMPOSE[@]}" exec -T sing-box sing-box check \
-        -c "$CONFIG_PATH.next"
+        -c "$CONFIG_PATH.next" </dev/null
     "${COMPOSE[@]}" exec -T vpn-node-api mv \
-        "$CONFIG_PATH.next" "$CONFIG_PATH"
+        "$CONFIG_PATH.next" "$CONFIG_PATH" </dev/null
     "${COMPOSE[@]}" restart sing-box
 }
 
