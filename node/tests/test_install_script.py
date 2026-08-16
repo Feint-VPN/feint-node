@@ -112,6 +112,13 @@ def test_install_script_pulls_prebuilt_service_images():
     assert "--no-cache" not in content, "install.sh must retain Docker layer caching"
 
 
+def test_install_script_pins_singbox_key_generation_image():
+    content = (ROOT / "install.sh").read_text(encoding="utf-8")
+
+    assert "ghcr.io/sagernet/sing-box:v1.13.12" in content
+    assert "ghcr.io/sagernet/sing-box:latest" not in content
+
+
 def test_compose_uses_a_pinned_v2ray_enabled_singbox_image():
     compose_path = ROOT / "docker-compose.yml"
     content = compose_path.read_text(encoding="utf-8")

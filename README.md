@@ -248,7 +248,8 @@ The node can optionally produce a Hiddify-compatible Base64 payload from its
 locally configured protocols.
 
 ```bash
-curl https://vpn.example.com:8337/sub/username
+curl -H "X-API-Secret: $API_SECRET" \
+  https://vpn.example.com:8337/sub/username
 ```
 
 The payload contains newline-separated connection URIs before Base64 encoding.

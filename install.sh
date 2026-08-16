@@ -226,7 +226,7 @@ info "Generating x25519 key pair for Reality..."
 KEYGEN_OUT=""
 # Preferred: use sing-box Docker image (same format the server expects)
 if command -v docker &>/dev/null; then
-    KEYGEN_OUT=$(docker run --rm ghcr.io/sagernet/sing-box:latest \
+    KEYGEN_OUT=$(docker run --rm ghcr.io/sagernet/sing-box:v1.13.12 \
         generate reality-keypair 2>/dev/null || true)
 fi
 # Fallback: host sing-box binary
@@ -522,7 +522,8 @@ echo -e "    -H 'Content-Type: application/json' \\"
 echo -e "    -d '{\"username\": \"alice\"}'"
 echo ""
 echo -e "  ${CYAN}# Get Hiddify subscription URL${NC}"
-echo -e "  https://${DOMAIN}:${API_PORT}/sub/alice?server_domain=${DOMAIN}"
+echo -e "  curl -sk -H 'X-API-Secret: <read it from .env.local>' \\"
+echo -e "    'https://${DOMAIN}:${API_PORT}/sub/alice?server_domain=${DOMAIN}'"
 echo ""
 echo -e "  ${CYAN}# Check container status${NC}"
 echo -e "  docker compose -f ${INSTALL_DIR}/docker-compose.yml ps"
