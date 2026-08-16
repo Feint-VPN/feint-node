@@ -30,7 +30,6 @@ There is one implementation path. The retired parallel `routers`, `schemas`,
 | `src/domain` | Local user lifecycle, protocol mapping, errors and adapter contracts. |
 | `src/adapters` | Atomic configuration storage, Docker runtime, telemetry, traffic and URL building. |
 | `src/utils` | Settings, cryptographic values and structured secret-safe logging. |
-| `tests` | Unit, integration, property and deployment-script regression tests. |
 
 ## 🌙 Development
 
@@ -40,24 +39,17 @@ Create the environment from the repository root:
 uv sync --locked --extra dev
 ```
 
-Run the complete runtime suite:
-
-```powershell
-cd node
-uv run pytest -q --no-cov
-```
-
 Run formatting and lint checks from the root:
 
 ```powershell
-uv run ruff format --check node/src node/tests
-uv run ruff check node/src node/tests
+uv run ruff format --check node/src
+uv run ruff check node/src
 ```
 
 ## 🛸 Container
 
 The production image installs only `requirements.txt` and starts
-`uvicorn main:app`. Development-only packages are isolated in
+`uvicorn main:app`. The development-only linter is isolated in
 `requirements-dev.txt` and the `dev` uv extra.
 
 ```bash

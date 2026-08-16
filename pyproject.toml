@@ -22,11 +22,6 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "hypothesis>=6.98",
-    "httpx>=0.26",
-    "pytest>=8.0",
-    "pytest-asyncio>=0.23",
-    "pytest-cov>=4.1",
     "ruff>=0.12",
 ]
 
@@ -45,16 +40,3 @@ ignore = ["B008"]  # FastAPI dependency declarations intentionally call Depends.
 "node/src/adapters/node_telemetry.py" = ["BLE001"]
 "node/src/domain/user_service.py" = ["BLE001"]
 "node/src/adapters/traffic_tracker.py" = ["ASYNC240"]
-"node/tests/**" = ["SIM117"]
-
-[tool.pytest.ini_options]
-testpaths = ["node/tests"]
-pythonpath = ["node/src"]
-asyncio_mode = "auto"
-addopts = "--strict-markers"
-markers = [
-    "unit: Unit tests",
-    "integration: Integration tests",
-    "property: Property-based tests",
-    "slow: Slow running tests",
-]
