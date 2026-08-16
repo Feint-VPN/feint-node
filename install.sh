@@ -42,6 +42,8 @@ API_PORT="8337"
 INSTALL_DIR="/opt/vpn-node"
 SUB_ENABLED="true"
 BRANCH="main"
+NODE_IMAGE="ghcr.io/feint-vpn/feint-node:latest"
+SINGBOX_IMAGE="ghcr.io/feint-vpn/feint-sing-box:v1.13.12-feint.1"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -224,9 +226,9 @@ fi
 #   Reality x25519 key pair — use sing-box container for guaranteed format
 info "Generating x25519 key pair for Reality..."
 KEYGEN_OUT=""
-# Preferred: use sing-box Docker image (same format the server expects)
+# Preferred: use the same Feint sing-box image that the node will run.
 if command -v docker &>/dev/null; then
-    KEYGEN_OUT=$(docker run --rm ghcr.io/sagernet/sing-box:v1.13.12 \
+    KEYGEN_OUT=$(docker run --rm "$SINGBOX_IMAGE" \
         generate reality-keypair 2>/dev/null || true)
 fi
 # Fallback: host sing-box binary
@@ -344,6 +346,8 @@ LOG_LEVEL=info
 LOG_FORMAT=json
 
 # Docker
+NODE_IMAGE=${NODE_IMAGE}
+SINGBOX_IMAGE=${SINGBOX_IMAGE}
 DOCKER_SOCKET=/var/run/docker.sock
 DOCKER_GID=${DOCKER_GID}
 SINGBOX_CONTAINER_NAME=sing-box

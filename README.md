@@ -309,6 +309,7 @@ Runtime values live in `.env.local`. Start from [`.env.example`](.env.example).
 | `SUBSCRIPTION_ENABLED` | `false` | Enable `/sub/{username}`. |
 | `SUB_URI_TEMPLATE` | `🌌 Feint \| {Protocol}` | Display label for generated URIs. |
 | `NODE_IMAGE` | `ghcr.io/feint-vpn/feint-node:latest` | Published node API image. |
+| `SINGBOX_IMAGE` | `ghcr.io/feint-vpn/feint-sing-box:v1.13.12-feint.1` | Feint sing-box runtime image. |
 | `VLESS_PORT` | configurable | VLESS Reality listener. |
 | `VMESS_PORT` | configurable | VMess WebSocket listener. |
 | `TROJAN_PORT` | configurable | Trojan listener. |
