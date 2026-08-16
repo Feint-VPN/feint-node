@@ -90,7 +90,7 @@ rollback() {
         "chown 1000:1000 '${CONFIG_PATH:-/opt/sing-box/config.json}' && chmod 600 '${CONFIG_PATH:-/opt/sing-box/config.json}'"
     "${COMPOSE[@]}" restart sing-box
     if wait_for_status; then
-        error "Previous deployment restored"
+        success "Previous deployment restored"
     else
         error "Rollback incomplete; inspect $ENV_BACKUP and $CONFIG_BACKUP"
     fi

@@ -29,6 +29,7 @@ def test_update_script_has_a_small_transactional_flow():
     assert "ghcr.io/feint-vpn/feint-sing-box:v1.13.12-feint.1" in content
     assert "up -d --no-build --remove-orphans" in content
     assert "wait_for_status" in content
+    assert 'success "Previous deployment restored"' in content
 
 
 def test_update_script_synchronizes_and_validates_the_template():
