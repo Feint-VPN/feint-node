@@ -82,6 +82,7 @@ class RuleSet(BaseModel):
     type: str
     tag: str
     format: str | None = None
+    path: str | None = None
     url: str | None = None
     update_interval: str | None = None
 
