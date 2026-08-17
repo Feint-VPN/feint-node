@@ -125,6 +125,7 @@ generated ports and secrets and validates the result with `sing-box check`.
 | `--sub` | `true` | Enable the node subscription endpoint. |
 | `--branch` | `main` | Repository branch installed on the server. |
 | `--new-ssh-port` | random | Use this fixed SSH port and skip interactive confirmation for SDK installation. |
+| `--ssh-public-key` | existing key | Public key installed before password SSH is disabled. Required with `--new-ssh-port`. |
 
 For a non-interactive SDK installation, provide the SSH port that the SDK will
 persist and use after provisioning:
@@ -134,11 +135,16 @@ curl -fsSL https://raw.githubusercontent.com/Feint-VPN/feint-node/main/install.s
   sudo bash -s -- \
   --domain vpn.example.com \
   --email admin@example.com \
-  --new-ssh-port 41035
+  --new-ssh-port 41035 \
+  --ssh-public-key "$(cat ~/.ssh/id_ed25519.pub)"
 ```
 
-Without `--new-ssh-port`, the installer keeps the manual flow: it selects a
-random port and waits until a second SSH connection is confirmed.
+The installer always disables SSH password login. Without `--new-ssh-port`, it
+requires an existing authorized key, selects a random port, and waits until a
+second SSH connection is confirmed.
+
+`main` installs `feint-node:latest`; the `dev` branch installs the matching
+`feint-node:dev` image published by the repository workflow.
 
 ## 🛸 Security and endpoint hiding
 

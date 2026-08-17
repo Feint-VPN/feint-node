@@ -15,6 +15,7 @@
 #    --sub      Enable subscription endpoint     (default: true)
 #    --branch   Git branch to clone              (default: main)
 #    --new-ssh-port Fixed SSH port for non-interactive SDK installation
+#    --ssh-public-key Public key installed before password SSH is disabled
 # ============================================================
 set -euo pipefail
 
@@ -46,6 +47,7 @@ BRANCH="main"
 NODE_IMAGE="ghcr.io/feint-vpn/feint-node:latest"
 SINGBOX_IMAGE="ghcr.io/feint-vpn/feint-sing-box:v1.13.12-feint.1"
 NEW_SSH_PORT=""
+SSH_PUBLIC_KEY=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -57,6 +59,7 @@ while [[ $# -gt 0 ]]; do
         --sub)      SUB_ENABLED="$2"; shift 2 ;;
         --branch)   BRANCH="$2";      shift 2 ;;
         --new-ssh-port) [[ $# -ge 2 ]] || die "--new-ssh-port requires a value"; NEW_SSH_PORT="$2"; shift 2 ;;
+        --ssh-public-key) [[ $# -ge 2 ]] || die "--ssh-public-key requires a value"; SSH_PUBLIC_KEY="$2"; shift 2 ;;
         -h|--help)
             echo "Usage: $0 --domain <fqdn> --email <email> [options]"
             echo ""
@@ -68,12 +71,17 @@ while [[ $# -gt 0 ]]; do
             echo "  --sub      Enable subscription endpoint (default: true)"
             echo "  --branch   Git branch                   (default: main)"
             echo "  --new-ssh-port Fixed SSH port; skips interactive confirmation"
+            echo "  --ssh-public-key Public key installed before password SSH is disabled"
             exit 0 ;;
         *) die "Unknown argument: $1" ;;
     esac
 done
 
 # ── validate required args ────────────────────────────────────────────────────
+if [[ "$BRANCH" != main ]]; then
+    NODE_IMAGE="ghcr.io/feint-vpn/feint-node:${BRANCH//\//-}"
+fi
+
 [[ -z "$DOMAIN" ]] && die "--domain is required"
 [[ -z "$EMAIL"  ]] && die "--email is required"
 
@@ -364,7 +372,7 @@ port_require_available tcp 80 "ACME standalone challenge" \
 info "Issuing certificate for ${DOMAIN} via Let's Encrypt..."
 docker volume create "${COMPOSE_CERT_VOL}" >/dev/null 2>&1 || true
 docker volume create "${COMPOSE_CERT_WWW_VOL}" >/dev/null 2>&1 || true
-docker run --rm \
+if ! docker run --rm \
     -p 80:80 \
     -v "${COMPOSE_CERT_VOL}:/etc/letsencrypt" \
     -v "${COMPOSE_CERT_WWW_VOL}:/var/www/certbot" \
@@ -374,8 +382,9 @@ docker run --rm \
         --agree-tos \
         --email "$EMAIL" \
         --domains "$DOMAIN" \
-        --preferred-challenges http \
-        2>&1 | grep -E "(Congratulations|error|Error|Failed|Successfully|Cert)" || true
+        --preferred-challenges http; then
+    die "Could not obtain a TLS certificate for ${DOMAIN}"
+fi
 
 CERT_PATH="/var/lib/docker/volumes/${COMPOSE_CERT_VOL}/_data/live/${DOMAIN}/fullchain.pem"
 if [[ -f "$CERT_PATH" ]]; then
@@ -416,6 +425,7 @@ info "Generating sing-box config.json..."
 
 SINGBOX_TEMPLATE="$INSTALL_DIR/templates/sing-box.json.tpl"
 SINGBOX_CONFIG="/tmp/singbox-install-config.json"
+GEOIP_RULESET="/tmp/geoip-ru.srs"
 [[ -f "$SINGBOX_TEMPLATE" ]] || die "Missing sing-box template: $SINGBOX_TEMPLATE"
 
 rendered_config=$(<"$SINGBOX_TEMPLATE")
@@ -442,9 +452,17 @@ if grep -qE '\{\{[A-Z0-9_]+\}\}' "$SINGBOX_CONFIG"; then
     die "Unresolved value in sing-box template"
 fi
 
+info "Downloading the current RU GeoIP rule-set..."
+curl --fail --silent --show-error --location \
+    --header 'Accept: application/vnd.github.raw+json' \
+    'https://api.github.com/repos/SagerNet/sing-geoip/contents/geoip-ru.srs?ref=rule-set' \
+    --output "$GEOIP_RULESET" \
+    || die "Could not download the RU GeoIP rule-set"
+
 info "Validating sing-box config..."
 if ! compose run --rm --no-deps \
     -v "$SINGBOX_CONFIG:/tmp/config.json:ro" \
+    -v "$GEOIP_RULESET:/opt/sing-box/geoip-ru.srs:ro" \
     sing-box check -c /tmp/config.json </dev/null; then
     die "Generated sing-box config is invalid"
 fi
@@ -453,7 +471,10 @@ docker volume create "${COMPOSE_SINGBOX_VOL}" >/dev/null 2>&1 || true
 docker run --rm \
     -v "${COMPOSE_SINGBOX_VOL}:/opt/sing-box" \
     -v "/tmp:/tmp" \
-    alpine sh -c "mkdir -p /opt/sing-box && cp $SINGBOX_CONFIG /opt/sing-box/config.json && chown -R 1000:1000 /opt/sing-box"
+    alpine sh -c "mkdir -p /opt/sing-box \
+        && cp $SINGBOX_CONFIG /opt/sing-box/config.json \
+        && cp $GEOIP_RULESET /opt/sing-box/geoip-ru.srs \
+        && chown -R 1000:1000 /opt/sing-box"
 
 info "Starting all containers..."
 compose up -d --no-build
@@ -491,7 +512,8 @@ fi
 header "Secure host"
 FIREWALL_ARGS=(--dir "$INSTALL_DIR")
 if [[ -n "$NEW_SSH_PORT" ]]; then
-    FIREWALL_ARGS+=(--ssh-port "$NEW_SSH_PORT" --no-confirm)
+    [[ -n "$SSH_PUBLIC_KEY" ]] || die "--new-ssh-port requires --ssh-public-key"
+    FIREWALL_ARGS+=(--ssh-port "$NEW_SSH_PORT" --ssh-public-key "$SSH_PUBLIC_KEY" --no-confirm)
 fi
 bash "$INSTALL_DIR/scripts/setup-firewall.sh" "${FIREWALL_ARGS[@]}"
 wait_for_status "$STATUS_URL" \

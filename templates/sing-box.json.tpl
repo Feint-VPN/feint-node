@@ -92,7 +92,16 @@
       { "action": "sniff" },
       { "action": "resolve", "strategy": "ipv4_only" },
       { "ip_cidr": ["::/0"], "outbound": "block" },
-      { "ip_is_private": true, "outbound": "block" }
+      { "ip_is_private": true, "outbound": "block" },
+      { "rule_set": "geoip-ru", "action": "reject" }
+    ],
+    "rule_set": [
+      {
+        "type": "local",
+        "tag": "geoip-ru",
+        "format": "binary",
+        "path": "/opt/sing-box/geoip-ru.srs"
+      }
     ],
     "final": "direct"
   },

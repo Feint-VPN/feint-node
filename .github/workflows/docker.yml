@@ -2,7 +2,7 @@ name: Docker image
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
@@ -39,6 +39,7 @@ jobs:
           images: ${{ env.NODE_IMAGE }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
             type=sha,prefix=sha-
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
