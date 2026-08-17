@@ -15,6 +15,7 @@
 #    --sub      Enable subscription endpoint     (default: true)
 #    --branch   Git branch to clone              (default: main)
 #    --new-ssh-port Fixed SSH port for non-interactive SDK installation
+#    --ssh-public-key Public key installed before password SSH is disabled
 # ============================================================
 set -euo pipefail
 
