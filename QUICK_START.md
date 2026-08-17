@@ -19,7 +19,7 @@ The script handles everything with **zero prompts**:
 
 - Installs Docker
 - Clones the repo to `/opt/vpn-node`
-- Generates all cryptographic keys (Reality x25519, Shadowsocks PSK, random ports)
+- Generates protocol secrets and random ports
 - Issues a Let's Encrypt TLS certificate
 - Builds and starts all containers
 - Prints the API URL, secret, ports, and ready-to-use subscription URL
@@ -124,7 +124,7 @@ All 5 protocols will appear automatically: VLESS, VMess, Trojan, Hysteria2, Shad
 
 | Protocol        | Port     | Transport                 |
 | --------------- | -------- | ------------------------- |
-| VLESS + Reality | 8552 TCP | Direct (xtls-rprx-vision) |
+| VLESS Vision TLS | 8552 TCP | Direct (xtls-rprx-vision) |
 | VMess           | 489 TCP  | WebSocket + TLS           |
 | Trojan          | 2267 TCP | TLS                       |
 | Hysteria2       | 2294 UDP | QUIC                      |

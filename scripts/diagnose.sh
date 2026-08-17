@@ -145,7 +145,7 @@ fi
 if (( LOG_LINES > 0 )); then
     printf '\nRecent logs (secrets redacted)\n'
     secrets=()
-    for key in API_SECRET REALITY_PRIVATE_KEY SHADOWSOCKS_PASSWORD CLASH_API_SECRET; do
+    for key in API_SECRET SHADOWSOCKS_PASSWORD CLASH_API_SECRET; do
         value="$(env_get "$key" "$ENV_FILE")"
         [[ -n "$value" ]] && secrets+=("$value")
     done

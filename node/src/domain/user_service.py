@@ -13,7 +13,7 @@ from domain.errors import (
 from domain.models import Inbound, InboundUser, SingBoxConfig
 from domain.mutation import serialized_mutation
 from domain.ports import IConfigStore, IConfigUrlBuilder, IContainerRuntime
-from utils.crypto import derive_reality_public_key, generate_secure_password
+from utils.crypto import generate_secure_password
 from utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -245,23 +245,14 @@ class UserService:
 
         if "vless" in by_proto:
             user, ib = by_proto["vless"]
-            reality = ib.tls.reality if ib.tls else None
-            if reality:
-                private_key_b64 = reality.get("private_key", "")
-                public_key_b64 = derive_reality_public_key(private_key_b64)
-                url = self._url_builder.vless_url(
-                    uuid=user.uuid or "",
-                    domain=domain,
-                    port=ib.listen_port,
-                    reality_public_key=public_key_b64,
-                    short_id=(reality.get("short_id") or [""])[0],
-                    server_name=ib.tls.server_name or "www.microsoft.com",  # type: ignore[union-attr]
-                )
-                configs["vless"] = {
-                    "protocol": "vless",
-                    "config_url": url,
-                    "port": ib.listen_port,
-                }
+            url = self._url_builder.vless_url(
+                uuid=user.uuid or "", domain=domain, port=ib.listen_port
+            )
+            configs["vless"] = {
+                "protocol": "vless",
+                "config_url": url,
+                "port": ib.listen_port,
+            }
 
         if "vmess" in by_proto:
             user, ib = by_proto["vmess"]

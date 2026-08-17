@@ -8,7 +8,6 @@ version = "2.0.0"
 description = "Feint VPN node API"
 requires-python = ">=3.11"
 dependencies = [
-    "cryptography>=42.0",
     "docker>=7.0",
     "email-validator>=2.1",
     "fastapi>=0.109",

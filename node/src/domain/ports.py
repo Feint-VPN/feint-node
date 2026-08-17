@@ -40,9 +40,6 @@ class IConfigUrlBuilder(ABC):
         uuid: str,
         domain: str,
         port: int,
-        reality_public_key: str,
-        short_id: str,
-        server_name: str = "www.microsoft.com",
     ) -> str: ...
 
     @abstractmethod
