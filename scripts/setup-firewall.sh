@@ -13,21 +13,24 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENV_FILE="$INSTALL_DIR/.env.local"
 NEW_SSH_PORT=""
+SSH_PUBLIC_KEY=""
 NO_CONFIRM=false
 
 usage() {
     cat <<EOF
-Usage: sudo $0 [--ssh-port PORT] [--no-confirm] [--dir DIR]
+Usage: sudo $0 [--ssh-port PORT] [--ssh-public-key KEY] [--no-confirm] [--dir DIR]
 
 The SSH port is always changed. Without --ssh-port, a free random port is used.
 Keep this terminal open and confirm a second SSH connection when prompted.
 --no-confirm is intended for SDK installation and requires an explicit port.
+--ssh-public-key installs the SDK-generated key before password login is disabled.
 EOF
 }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --ssh-port) [[ $# -ge 2 ]] || die "--ssh-port requires a value"; NEW_SSH_PORT="$2"; shift 2 ;;
+        --ssh-public-key) [[ $# -ge 2 ]] || die "--ssh-public-key requires a value"; SSH_PUBLIC_KEY="$2"; shift 2 ;;
         --no-confirm) NO_CONFIRM=true; shift ;;
         --dir) [[ $# -ge 2 ]] || die "--dir requires a value"; INSTALL_DIR="$2"; ENV_FILE="$2/.env.local"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
@@ -37,6 +40,9 @@ done
 
 if [[ "$NO_CONFIRM" == true && -z "$NEW_SSH_PORT" ]]; then
     die "--no-confirm requires --ssh-port"
+fi
+if [[ "$NO_CONFIRM" == true && -z "$SSH_PUBLIC_KEY" ]]; then
+    die "--no-confirm requires --ssh-public-key"
 fi
 
 [[ $EUID -eq 0 ]] || die "Run as root"
@@ -135,6 +141,14 @@ trap rollback ERR INT TERM HUP
 
 info "Moving SSH from $OLD_SSH_PORT to $NEW_SSH_PORT"
 mkdir -p /etc/ssh/sshd_config.d
+mkdir -p /root/.ssh
+chmod 700 /root/.ssh
+touch /root/.ssh/authorized_keys
+chmod 600 /root/.ssh/authorized_keys
+if [[ -n "$SSH_PUBLIC_KEY" ]] && ! grep -qxF "$SSH_PUBLIC_KEY" /root/.ssh/authorized_keys; then
+    printf '%s\n' "$SSH_PUBLIC_KEY" >> /root/.ssh/authorized_keys
+fi
+[[ -s /root/.ssh/authorized_keys ]] || die "Password authentication cannot be disabled without an authorized key"
 SSH_CHANGED=true
 while IFS= read -r -d '' config; do
     sed -i -E 's/^([[:space:]]*)Port([[:space:]]+)/# Feint disabled Port /' "$config"
@@ -142,7 +156,13 @@ done < <(find /etc/ssh -maxdepth 2 -type f \( -name sshd_config -o -path '/etc/s
 if ! grep -qE '^[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config\.d/\*\.conf' /etc/ssh/sshd_config; then
     sed -i '1i Include /etc/ssh/sshd_config.d/*.conf' /etc/ssh/sshd_config
 fi
-printf 'Port %s\n' "$NEW_SSH_PORT" > "$SSH_DROPIN"
+cat > "$SSH_DROPIN" <<EOF
+Port $NEW_SSH_PORT
+PubkeyAuthentication yes
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin prohibit-password
+EOF
 
 sshd -t
 mapfile -t effective_ports < <(sshd -T | awk '$1 == "port" { print $2 }')
@@ -150,6 +170,8 @@ if [[ ${#effective_ports[@]} -ne 1 || "${effective_ports[0]}" != "$NEW_SSH_PORT"
     error "The effective SSH configuration did not select only $NEW_SSH_PORT"
     false
 fi
+[[ "$(sshd -T | awk '$1 == "passwordauthentication" { print $2; exit }')" == no ]] \
+    || die "Password authentication is still enabled"
 
 info "Closing host ports outside the Feint allowlist"
 FIREWALL_CHANGED=true
