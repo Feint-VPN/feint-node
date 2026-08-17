@@ -143,6 +143,9 @@ The installer always disables SSH password login. Without `--new-ssh-port`, it
 requires an existing authorized key, selects a random port, and waits until a
 second SSH connection is confirmed.
 
+`main` installs `feint-node:latest`; the `dev` branch installs the matching
+`feint-node:dev` image published by the repository workflow.
+
 ## 🛸 Security and endpoint hiding
 
 `HIDE_ENDPOINTS=true` is the production default.

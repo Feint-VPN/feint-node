@@ -77,6 +77,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ── validate required args ────────────────────────────────────────────────────
+if [[ "$BRANCH" != main ]]; then
+    NODE_IMAGE="ghcr.io/feint-vpn/feint-node:${BRANCH//\//-}"
+fi
+
 [[ -z "$DOMAIN" ]] && die "--domain is required"
 [[ -z "$EMAIL"  ]] && die "--email is required"
 
