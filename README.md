@@ -78,7 +78,7 @@ Creating or deleting a user follows one transaction-like flow:
 
 | Protocol | Runtime tag | User credential |
 | --- | --- | --- |
-| VLESS Reality | `vless-reality-in` | UUID |
+| VLESS Vision TLS | `vless-reality-in` | UUID |
 | VMess WebSocket | `vmess-ws-in` | UUID |
 | Trojan | `trojan-in` | Password |
 | Hysteria2 | `hysteria2-in` | Password |
@@ -201,7 +201,7 @@ Example response:
   "statistics": "available",
   "user_count": 250,
   "protocols": [
-    {"name": "VLESS Reality", "port": 28473, "enabled": true}
+    {"name": "VLESS", "port": 28473, "enabled": true}
   ]
 }
 ```
@@ -332,7 +332,7 @@ Runtime values live in `.env.local`. Start from [`.env.example`](.env.example).
 | `SUB_URI_TEMPLATE` | `🌌 Feint \| {Protocol}` | Display label for generated URIs. |
 | `NODE_IMAGE` | `ghcr.io/feint-vpn/feint-node:latest` | Published node API image. |
 | `SINGBOX_IMAGE` | `ghcr.io/feint-vpn/feint-sing-box:v1.13.12-feint.1` | Feint sing-box runtime image. |
-| `VLESS_PORT` | configurable | VLESS Reality listener. |
+| `VLESS_PORT` | configurable | VLESS Vision TLS listener. |
 | `VMESS_PORT` | configurable | VMess WebSocket listener. |
 | `TROJAN_PORT` | configurable | Trojan listener. |
 | `HYSTERIA2_PORT` | configurable | Hysteria2 UDP listener. |
@@ -387,6 +387,12 @@ docker compose --env-file .env.local ps
 docker compose --env-file .env.local logs -f vpn-node-api sing-box
 docker compose --env-file .env.local restart vpn-node-api
 ```
+
+During a planned sing-box stop or restart, `v1.13.12` may log
+`sing-box did not closed properly: close v2ray server: ... use of closed network connection`.
+This is a harmless upstream double-close message when the container exits with code `0`,
+starts again and the node health check remains healthy. Investigate it only when shutdown
+fails, the container stays stopped or `/health` becomes degraded.
 
 Update an installed node:
 

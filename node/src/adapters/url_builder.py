@@ -13,18 +13,12 @@ class UrlBuilder(IConfigUrlBuilder):
         uuid: str,
         domain: str,
         port: int,
-        reality_public_key: str,
-        short_id: str,
-        server_name: str = "www.microsoft.com",
     ) -> str:
         params = urlencode(
             {
                 "type": "tcp",
-                "security": "reality",
-                "pbk": reality_public_key,
-                "sid": short_id,
-                "sni": server_name,
-                "fp": "chrome",
+                "security": "tls",
+                "sni": domain,
                 "flow": "xtls-rprx-vision",
             }
         )

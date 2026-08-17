@@ -10,10 +10,10 @@ The `config.json` template is the initial sing-box configuration used during nod
 
 The template includes the following protocol inbounds:
 
-1. **VLESS with Reality** (Port 8443)
+1. **VLESS Vision with TLS** (Port 8443)
    - Tag: `vless-reality-in`
-   - Features: Reality protocol for TLS fingerprint resistance
-   - Multiplex enabled with padding
+   - Uses the node's TLS certificate
+   - Multiplex disabled for Vision compatibility
 
 2. **VMess with WebSocket** (Port 443)
    - Tag: `vmess-ws-in`
@@ -38,9 +38,6 @@ The template includes the following protocol inbounds:
 
 The template uses the following environment variable placeholders:
 
-- `${REALITY_SERVER_NAME}`: Server name for Reality handshake (e.g., `www.microsoft.com`)
-- `${REALITY_PRIVATE_KEY}`: X25519 private key for Reality protocol
-- `${REALITY_SHORT_ID}`: Short ID for Reality protocol (8-16 hex characters)
 - `${TLS_CERT_PATH}`: Path to TLS certificate (Let's Encrypt fullchain.pem)
 - `${TLS_KEY_PATH}`: Path to TLS private key (Let's Encrypt privkey.pem)
 - `${SHADOWSOCKS_METHOD}`: Encryption method for Shadowsocks (e.g., `2022-blake3-aes-128-gcm`)

@@ -252,20 +252,10 @@ fi
 # Generate API secret if not provided
 [[ -z "$API_SECRET" ]] && API_SECRET="$(gen_secret 32)"
 
-# Generate all cryptographic material locally
-#   Reality x25519 key pair — use sing-box container for guaranteed format
-info "Generating x25519 key pair for Reality..."
-KEYGEN_OUT="$(docker run --rm "$SINGBOX_IMAGE" generate reality-keypair)" \
-    || die "Could not generate Reality keys with $SINGBOX_IMAGE"
-REALITY_PRIVATE="$(awk '$1 == "PrivateKey:" { print $2; exit }' <<< "$KEYGEN_OUT")"
-[[ -n "$REALITY_PRIVATE" ]] || die "sing-box returned no Reality private key"
-
-REALITY_SHORT_ID=$(openssl rand -hex 8)
-
-#   Shadowsocks 2022 PSK (32 bytes for aes-256)
+# Generate protocol secrets locally
+# Shadowsocks 2022 PSK (32 bytes for aes-256)
 SS_PASSWORD=$(openssl rand -base64 32 | tr -d '\n')
 SS_METHOD="2022-blake3-aes-256-gcm"
-REALITY_SERVER_NAME="www.microsoft.com"
 CLASH_API_SECRET=$(gen_secret 32)
 
 #   Random VPN ports
@@ -314,11 +304,6 @@ VMESS_PORT=${VMESS_PORT}
 TROJAN_PORT=${TROJAN_PORT}
 HYSTERIA2_PORT=${HY2_PORT}
 SHADOWSOCKS_PORT=${SS_PORT}
-
-# Reality Settings (VLESS)
-REALITY_PRIVATE_KEY=${REALITY_PRIVATE}
-REALITY_SHORT_ID=${REALITY_SHORT_ID}
-REALITY_SERVER_NAME=${REALITY_SERVER_NAME}
 
 # Shadowsocks Settings
 SHADOWSOCKS_PASSWORD=${SS_PASSWORD}
@@ -440,9 +425,6 @@ replace_config_value VMESS_PORT "$VMESS_PORT"
 replace_config_value TROJAN_PORT "$TROJAN_PORT"
 replace_config_value HYSTERIA2_PORT "$HY2_PORT"
 replace_config_value SHADOWSOCKS_PORT "$SS_PORT"
-replace_config_value REALITY_SERVER_NAME "$REALITY_SERVER_NAME"
-replace_config_value REALITY_PRIVATE_KEY "$REALITY_PRIVATE"
-replace_config_value REALITY_SHORT_ID "$REALITY_SHORT_ID"
 replace_config_value SHADOWSOCKS_METHOD "$SS_METHOD"
 replace_config_value SHADOWSOCKS_PASSWORD "$SS_PASSWORD"
 replace_config_value CLASH_API_SECRET "$CLASH_API_SECRET"
@@ -530,7 +512,7 @@ echo -e "  ${BOLD}API credentials:${NC}"
 echo -e "    Stored privately in ${ENV_FILE}"
 echo ""
 echo -e "  ${BOLD}VPN Ports:${NC}"
-echo -e "    VLESS+Reality  → ${VLESS_PORT}/TCP"
+echo -e "    VLESS Vision TLS → ${VLESS_PORT}/TCP"
 echo -e "    VMess+WS+TLS  → ${VMESS_PORT}/TCP"
 echo -e "    Trojan         → ${TROJAN_PORT}/TCP"
 echo -e "    Hysteria2      → ${HY2_PORT}/UDP"
