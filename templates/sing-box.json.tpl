@@ -97,11 +97,10 @@
     ],
     "rule_set": [
       {
-        "type": "remote",
+        "type": "local",
         "tag": "geoip-ru",
         "format": "binary",
-        "url": "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-ru.srs",
-        "update_interval": "1d"
+        "path": "/opt/sing-box/geoip-ru.srs"
       }
     ],
     "final": "direct"

@@ -102,8 +102,15 @@ rollback() {
 
 sync_template() {
     local helper=/tmp/feint-sync-singbox.py template=/tmp/feint-singbox-template.json
+    local ruleset=/tmp/feint-geoip-ru.srs
+    curl --fail --silent --show-error --location \
+        --header 'Accept: application/vnd.github.raw+json' \
+        'https://api.github.com/repos/SagerNet/sing-geoip/contents/geoip-ru.srs?ref=rule-set' \
+        --output "$ruleset"
     "${COMPOSE[@]}" cp "$INSTALL_DIR/scripts/sync-singbox.py" "vpn-node-api:$helper"
     "${COMPOSE[@]}" cp "$INSTALL_DIR/templates/sing-box.json.tpl" "vpn-node-api:$template"
+    "${COMPOSE[@]}" cp "$ruleset" "vpn-node-api:/opt/sing-box/geoip-ru.srs"
+    rm -f "$ruleset"
     "${COMPOSE[@]}" exec -T vpn-node-api python "$helper" \
         "$template" "$CONFIG_PATH" "$CONFIG_PATH.next" </dev/null
     "${COMPOSE[@]}" exec -T sing-box sing-box check \

@@ -364,7 +364,7 @@ port_require_available tcp 80 "ACME standalone challenge" \
 info "Issuing certificate for ${DOMAIN} via Let's Encrypt..."
 docker volume create "${COMPOSE_CERT_VOL}" >/dev/null 2>&1 || true
 docker volume create "${COMPOSE_CERT_WWW_VOL}" >/dev/null 2>&1 || true
-docker run --rm \
+if ! docker run --rm \
     -p 80:80 \
     -v "${COMPOSE_CERT_VOL}:/etc/letsencrypt" \
     -v "${COMPOSE_CERT_WWW_VOL}:/var/www/certbot" \
@@ -374,8 +374,9 @@ docker run --rm \
         --agree-tos \
         --email "$EMAIL" \
         --domains "$DOMAIN" \
-        --preferred-challenges http \
-        2>&1 | grep -E "(Congratulations|error|Error|Failed|Successfully|Cert)" || true
+        --preferred-challenges http; then
+    die "Could not obtain a TLS certificate for ${DOMAIN}"
+fi
 
 CERT_PATH="/var/lib/docker/volumes/${COMPOSE_CERT_VOL}/_data/live/${DOMAIN}/fullchain.pem"
 if [[ -f "$CERT_PATH" ]]; then
@@ -416,6 +417,7 @@ info "Generating sing-box config.json..."
 
 SINGBOX_TEMPLATE="$INSTALL_DIR/templates/sing-box.json.tpl"
 SINGBOX_CONFIG="/tmp/singbox-install-config.json"
+GEOIP_RULESET="/tmp/geoip-ru.srs"
 [[ -f "$SINGBOX_TEMPLATE" ]] || die "Missing sing-box template: $SINGBOX_TEMPLATE"
 
 rendered_config=$(<"$SINGBOX_TEMPLATE")
@@ -442,9 +444,17 @@ if grep -qE '\{\{[A-Z0-9_]+\}\}' "$SINGBOX_CONFIG"; then
     die "Unresolved value in sing-box template"
 fi
 
+info "Downloading the current RU GeoIP rule-set..."
+curl --fail --silent --show-error --location \
+    --header 'Accept: application/vnd.github.raw+json' \
+    'https://api.github.com/repos/SagerNet/sing-geoip/contents/geoip-ru.srs?ref=rule-set' \
+    --output "$GEOIP_RULESET" \
+    || die "Could not download the RU GeoIP rule-set"
+
 info "Validating sing-box config..."
 if ! compose run --rm --no-deps \
     -v "$SINGBOX_CONFIG:/tmp/config.json:ro" \
+    -v "$GEOIP_RULESET:/opt/sing-box/geoip-ru.srs:ro" \
     sing-box check -c /tmp/config.json </dev/null; then
     die "Generated sing-box config is invalid"
 fi
@@ -453,7 +463,10 @@ docker volume create "${COMPOSE_SINGBOX_VOL}" >/dev/null 2>&1 || true
 docker run --rm \
     -v "${COMPOSE_SINGBOX_VOL}:/opt/sing-box" \
     -v "/tmp:/tmp" \
-    alpine sh -c "mkdir -p /opt/sing-box && cp $SINGBOX_CONFIG /opt/sing-box/config.json && chown -R 1000:1000 /opt/sing-box"
+    alpine sh -c "mkdir -p /opt/sing-box \
+        && cp $SINGBOX_CONFIG /opt/sing-box/config.json \
+        && cp $GEOIP_RULESET /opt/sing-box/geoip-ru.srs \
+        && chown -R 1000:1000 /opt/sing-box"
 
 info "Starting all containers..."
 compose up -d --no-build
