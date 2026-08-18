@@ -76,8 +76,8 @@ if [[ -z "$NEW_SSH_PORT" ]]; then
     NEW_SSH_PORT="$(port_find_free_unique tcp 20000 60000 "${reserved[@]}")" \
         || die "Could not find a free SSH port"
 else
-    port_validate "$NEW_SSH_PORT" && (( NEW_SSH_PORT >= 1024 )) \
-        || die "SSH port must be between 1024 and 65535"
+    port_validate "$NEW_SSH_PORT" \
+        || die "SSH port must be between 1 and 65535"
     [[ "$NEW_SSH_PORT" != "$OLD_SSH_PORT" ]] || die "SSH port must change"
     for port in "${reserved[@]}"; do
         [[ "$NEW_SSH_PORT" != "$port" ]] || die "SSH port conflicts with reserved port $port"

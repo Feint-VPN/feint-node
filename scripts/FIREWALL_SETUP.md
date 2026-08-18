@@ -11,10 +11,13 @@ sudo ./scripts/setup-firewall.sh
 SDK installation uses a predetermined port without reading from `/dev/tty`:
 
 ```bash
-sudo ./scripts/setup-firewall.sh --ssh-port 41035 --no-confirm
+sudo ./scripts/setup-firewall.sh \
+  --ssh-port 220 \
+  --ssh-public-key "$(cat ~/.ssh/id_ed25519.pub)" \
+  --no-confirm
 ```
 
-`--no-confirm` is rejected unless `--ssh-port` is also provided. The script
+`--no-confirm` requires both `--ssh-port` and `--ssh-public-key`. The script
 still validates the port, SSH configuration, listener, and firewall before
 closing the old port. The SDK must reconnect to the selected port after the
 installer exits.

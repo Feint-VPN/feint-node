@@ -135,7 +135,7 @@ curl -fsSL https://raw.githubusercontent.com/Feint-VPN/feint-node/main/install.s
   sudo bash -s -- \
   --domain vpn.example.com \
   --email admin@example.com \
-  --new-ssh-port 41035 \
+  --new-ssh-port 220 \
   --ssh-public-key "$(cat ~/.ssh/id_ed25519.pub)"
 ```
 

@@ -54,7 +54,7 @@ non-interactive and leaves the SDK with the exact port to persist:
 sudo bash install.sh \
   --domain vpn.example.com \
   --email admin@example.com \
-  --new-ssh-port 41035 \
+  --new-ssh-port 220 \
   --ssh-public-key "$(cat ~/.ssh/id_ed25519.pub)"
 ```
 

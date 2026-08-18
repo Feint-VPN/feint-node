@@ -99,8 +99,8 @@ echo "$EMAIL" | grep -qE '^[^@]+@[^@]+\.[^@]+$' \
 echo "$API_PORT" | grep -qE '^[0-9]{2,5}$' \
     || die "Invalid port: $API_PORT"
 if [[ -n "$NEW_SSH_PORT" ]]; then
-    [[ "$NEW_SSH_PORT" =~ ^[0-9]+$ ]] && (( NEW_SSH_PORT >= 1024 && NEW_SSH_PORT <= 65535 )) \
-        || die "--new-ssh-port must be between 1024 and 65535"
+    [[ "$NEW_SSH_PORT" =~ ^[0-9]+$ ]] && (( NEW_SSH_PORT >= 1 && NEW_SSH_PORT <= 65535 )) \
+        || die "--new-ssh-port must be between 1 and 65535"
 fi
 
 # ── must run as root ──────────────────────────────────────────────────────────

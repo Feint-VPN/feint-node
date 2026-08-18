@@ -32,7 +32,7 @@ For SDK-controlled provisioning, also choose the future SSH port:
 sudo bash install.sh \
   --domain vpn.example.com \
   --email admin@example.com \
-  --new-ssh-port 41035 \
+  --new-ssh-port 220 \
   --ssh-public-key "$(cat ~/.ssh/id_ed25519.pub)"
 ```
 
