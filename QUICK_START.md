@@ -124,17 +124,17 @@ All 5 protocols will appear automatically: VLESS, VMess, Trojan, Hysteria2, Shad
 
 | Protocol        | Port     | Transport                 |
 | --------------- | -------- | ------------------------- |
-| VLESS Vision TLS | 8552 TCP | Direct (xtls-rprx-vision) |
-| VMess           | 489 TCP  | WebSocket + TLS           |
-| Trojan          | 2267 TCP | TLS                       |
-| Hysteria2       | 2294 UDP | QUIC                      |
-| Shadowsocks     | 8654 TCP | 2022-blake3-aes-256-gcm   |
+| VLESS Vision REALITY | 443 TCP | Direct (xtls-rprx-vision) |
+| VMess           | random TCP | WebSocket + TLS           |
+| Trojan          | random TCP | TLS                       |
+| Hysteria2       | random UDP | QUIC                      |
+| Shadowsocks     | random TCP/UDP | 2022-blake3-aes-256-gcm |
 
 Override any port in `.env.local`:
 
 ```bash
 VLESS_PORT=443
-VMESS_PORT=8080
+VMESS_PORT=18443
 # etc.
 ```
 

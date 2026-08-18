@@ -61,7 +61,7 @@ jobs:
           images: ${{ env.SINGBOX_IMAGE }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=v1.13.12-feint.1
+            type=raw,value=v1.13.19-feint.1
             type=sha,prefix=sha-
 
       - name: Build and publish sing-box

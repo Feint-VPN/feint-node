@@ -45,6 +45,11 @@ class Settings:
             "SHADOWSOCKS_METHOD", "2022-blake3-aes-256-gcm"
         )
 
+        # VLESS REALITY client parameters. The private key stays in sing-box.
+        self.REALITY_PUBLIC_KEY: str = os.getenv("REALITY_PUBLIC_KEY", "")
+        self.REALITY_SHORT_ID: str = os.getenv("REALITY_SHORT_ID", "")
+        self.REALITY_SERVER_NAME: str = os.getenv("REALITY_SERVER_NAME", "google.com")
+
         # Paths
         self.ENV_FILE_PATH: Path = Path(
             os.getenv("ENV_FILE_PATH", "/opt/vpn-node/.env.local")

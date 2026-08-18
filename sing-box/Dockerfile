@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1.7
 
-FROM golang:1.24-alpine AS builder
+FROM golang:1.24.7-alpine AS builder
 
-ARG SINGBOX_REF=v1.13.12
+ARG SINGBOX_REF=v1.13.19
 
 RUN apk add --no-cache build-base ca-certificates git
 

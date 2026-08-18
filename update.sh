@@ -84,6 +84,8 @@ rollback() {
     error "Update failed; restoring the previous deployment"
     git reset --hard "$OLD_COMMIT"
     cp "$ENV_BACKUP" "$ENV_FILE"
+    source "$INSTALL_DIR/scripts/lib/firewall.sh"
+    firewall_apply "$ENV_FILE" "$(sshd -T | awk '$1 == "port" { print $2; exit }')"
     restore_image "$OLD_NODE_IMAGE" "$NODE_IMAGE"
     restore_image "$OLD_SINGBOX_IMAGE" "$SINGBOX_IMAGE"
     restore_image "$OLD_CERTBOT_IMAGE" "$CERTBOT_IMAGE"
@@ -103,12 +105,19 @@ rollback() {
 sync_template() {
     local helper=/tmp/feint-sync-singbox.py template=/tmp/feint-singbox-template.json
     local ruleset=/tmp/feint-geoip-ru.srs
+    local template_name template_path
+    template_name="$(env_get NODE_TEMPLATE "$ENV_FILE" default)"
+    case "$template_name" in
+        default) template_path="$INSTALL_DIR/templates/sing-box.json.tpl" ;;
+        hysteria2) template_path="$INSTALL_DIR/templates/hysteria2.json.tpl" ;;
+        *) die "Unknown node template: $template_name" ;;
+    esac
     curl --fail --silent --show-error --location \
         --header 'Accept: application/vnd.github.raw+json' \
         'https://api.github.com/repos/SagerNet/sing-geoip/contents/geoip-ru.srs?ref=rule-set' \
         --output "$ruleset"
     "${COMPOSE[@]}" cp "$INSTALL_DIR/scripts/sync-singbox.py" "vpn-node-api:$helper"
-    "${COMPOSE[@]}" cp "$INSTALL_DIR/templates/sing-box.json.tpl" "vpn-node-api:$template"
+    "${COMPOSE[@]}" cp "$template_path" "vpn-node-api:$template"
     "${COMPOSE[@]}" cp "$ruleset" "vpn-node-api:/opt/sing-box/geoip-ru.srs"
     rm -f "$ruleset"
     "${COMPOSE[@]}" exec -T vpn-node-api python "$helper" \
@@ -139,7 +148,11 @@ cp "$ENV_FILE" "$ENV_BACKUP"
     "$CONFIG_PATH" > "$CONFIG_BACKUP"
 
 NODE_IMAGE="$(env_get NODE_IMAGE "$ENV_FILE" ghcr.io/feint-vpn/feint-node:latest)"
-SINGBOX_IMAGE="$(env_get SINGBOX_IMAGE "$ENV_FILE" ghcr.io/feint-vpn/feint-sing-box:v1.13.12-feint.1)"
+SINGBOX_IMAGE="$(env_get SINGBOX_IMAGE "$ENV_FILE" ghcr.io/feint-vpn/feint-sing-box:v1.13.19-feint.1)"
+if [[ "$SINGBOX_IMAGE" == ghcr.io/feint-vpn/feint-sing-box:v1.13.12-feint.1 ]]; then
+    SINGBOX_IMAGE=ghcr.io/feint-vpn/feint-sing-box:v1.13.19-feint.1
+    env_set SINGBOX_IMAGE "$SINGBOX_IMAGE" "$ENV_FILE"
+fi
 CERTBOT_IMAGE="certbot/certbot:latest"
 OLD_NODE_IMAGE="$("${COMPOSE[@]}" images -q vpn-node-api)"
 OLD_SINGBOX_IMAGE="$("${COMPOSE[@]}" images -q sing-box)"
@@ -160,6 +173,40 @@ env_set DOCKER_GID "$DOCKER_GID" "$ENV_FILE"
 
 info "Pulling service images"
 "${COMPOSE[@]}" pull certbot sing-box vpn-node-api
+
+if [[ -z "$(env_get REALITY_PRIVATE_KEY "$ENV_FILE")" \
+    || -z "$(env_get REALITY_PUBLIC_KEY "$ENV_FILE")" \
+    || -z "$(env_get REALITY_SHORT_ID "$ENV_FILE")" ]]; then
+    REALITY_KEYS="$(docker run --rm "$SINGBOX_IMAGE" generate reality-keypair)"
+    REALITY_PRIVATE_KEY="$(sed -n 's/^PrivateKey: //p' <<< "$REALITY_KEYS")"
+    REALITY_PUBLIC_KEY="$(sed -n 's/^PublicKey: //p' <<< "$REALITY_KEYS")"
+    [[ -n "$REALITY_PRIVATE_KEY" && -n "$REALITY_PUBLIC_KEY" ]] \
+        || { error "Could not generate a REALITY key pair"; false; }
+    env_set REALITY_PRIVATE_KEY "$REALITY_PRIVATE_KEY" "$ENV_FILE"
+    env_set REALITY_PUBLIC_KEY "$REALITY_PUBLIC_KEY" "$ENV_FILE"
+    env_set REALITY_SHORT_ID "$(openssl rand -hex 8)" "$ENV_FILE"
+fi
+env_set REALITY_SERVER_NAME "$(env_get REALITY_SERVER_NAME "$ENV_FILE" google.com)" "$ENV_FILE"
+
+if [[ "$(env_get VLESS_PORT "$ENV_FILE")" != 443 ]]; then
+    [[ "$(env_get API_PORT "$ENV_FILE")" != 443 ]] || { error "Port 443 is occupied by the node API"; false; }
+    reserved=(
+        "$(env_get API_PORT "$ENV_FILE")"
+        "$(env_get VLESS_PORT "$ENV_FILE")"
+        "$(env_get VMESS_PORT "$ENV_FILE")"
+        "$(env_get TROJAN_PORT "$ENV_FILE")"
+        "$(env_get HYSTERIA2_PORT "$ENV_FILE")"
+        "$(env_get SHADOWSOCKS_PORT "$ENV_FILE")"
+    )
+    for key in VMESS_PORT TROJAN_PORT SHADOWSOCKS_PORT; do
+        if [[ "$(env_get "$key" "$ENV_FILE")" == 443 ]]; then
+            env_set "$key" "$(port_find_free_unique tcp 10000 60000 "${reserved[@]}")" "$ENV_FILE"
+        fi
+    done
+    env_set VLESS_PORT 443 "$ENV_FILE"
+fi
+chmod 600 "$ENV_FILE"
+
 "${COMPOSE[@]}" up -d --no-build --remove-orphans
 
 info "Synchronizing the persisted sing-box config with the updated template"
@@ -167,6 +214,9 @@ sync_template
 
 info "Waiting for node readiness"
 wait_for_status
+
+source "$INSTALL_DIR/scripts/lib/firewall.sh"
+firewall_apply "$ENV_FILE" "$(sshd -T | awk '$1 == "port" { print $2; exit }')"
 
 trap - ERR
 rm -f "$ENV_BACKUP" "$CONFIG_BACKUP"

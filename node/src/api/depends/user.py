@@ -2,10 +2,11 @@
 
 from threading import Lock
 
-from adapters.singbox_file_store import SingBoxFileStore
 from adapters.url_builder import UrlBuilder
+from api.depends.config import get_config_store, get_mutation_lock
 from api.depends.runtime import get_container_runtime
 from domain.user_service import UserService
+from utils.settings import settings
 
 user_service: UserService | None = None
 user_service_lock = Lock()
@@ -17,8 +18,13 @@ def get_user_service() -> UserService:
         with user_service_lock:
             if user_service is None:
                 user_service = UserService(
-                    store=SingBoxFileStore(),
+                    store=get_config_store(),
                     runtime=get_container_runtime(),
-                    url_builder=UrlBuilder(),
+                    url_builder=UrlBuilder(
+                        settings.REALITY_PUBLIC_KEY,
+                        settings.REALITY_SHORT_ID,
+                        settings.REALITY_SERVER_NAME,
+                    ),
+                    mutation_lock=get_mutation_lock(),
                 )
     return user_service

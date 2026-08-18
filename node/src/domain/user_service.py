@@ -5,13 +5,12 @@ import uuid as _uuid
 from datetime import UTC, datetime
 
 from domain.errors import (
-    ConfigRollbackError,
     InboundNotFoundError,
     UserAlreadyExistsError,
     UserNotFoundError,
 )
 from domain.models import Inbound, InboundUser, SingBoxConfig
-from domain.mutation import serialized_mutation
+from domain.mutation import commit_config, serialized_mutation
 from domain.ports import IConfigStore, IConfigUrlBuilder, IContainerRuntime
 from utils.crypto import generate_secure_password
 from utils.logging_config import get_logger
@@ -78,31 +77,12 @@ class UserService:
         store: IConfigStore,
         runtime: IContainerRuntime,
         url_builder: IConfigUrlBuilder,
+        mutation_lock: asyncio.Lock | None = None,
     ) -> None:
         self._store = store
         self._runtime = runtime
         self._url_builder = url_builder
-        self._mutation_lock = asyncio.Lock()
-
-    async def _save_and_reload(self, config: SingBoxConfig, backup: str) -> None:
-        try:
-            await self._store.save(config)
-            await self._runtime.reload()
-        except asyncio.CancelledError:
-            await self._rollback(backup)
-            raise
-        except Exception:
-            await self._rollback(backup)
-            raise
-
-    async def _rollback(self, backup: str) -> None:
-        try:
-            await self._store.restore(backup)
-            await self._runtime.reload()
-        except Exception as error:
-            raise ConfigRollbackError(
-                "The previous sing-box configuration could not be recovered."
-            ) from error
+        self._mutation_lock = mutation_lock or asyncio.Lock()
 
     @serialized_mutation
     async def create_user(
@@ -114,31 +94,32 @@ class UserService:
         config = await self._store.load()
         backup = await self._store.backup()
 
-        # Duplicate check
-        first_tag = next(iter(PROTOCOL_TAGS.values()))
-        first_ib = _find_inbound(config, first_tag)
-        if first_ib and _user_in(first_ib, username):
+        configured = [
+            (protocol, inbound)
+            for protocol, tag in PROTOCOL_TAGS.items()
+            if (inbound := _find_inbound(config, tag)) is not None
+        ]
+        if not configured:
+            raise InboundNotFoundError("No supported inbound is configured")
+        if any(_user_in(inbound, username) for _, inbound in configured):
             raise UserAlreadyExistsError(f"User '{username}' already exists")
 
         uid = requested_uuid or str(_uuid.uuid4())
         pwd = requested_password or generate_secure_password(32)
 
-        for proto, tag in PROTOCOL_TAGS.items():
-            ib = _find_inbound(config, tag)
-            if ib is None:
-                raise InboundNotFoundError(f"Inbound '{tag}' not found in config")
-            ib.users.append(_adapt_user(username, uid, pwd, proto))
+        for protocol, inbound in configured:
+            inbound.users.append(_adapt_user(username, uid, pwd, protocol))
 
         _sync_v2ray_stats_users(config)
 
-        await self._save_and_reload(config, backup)
+        await commit_config(self._store, self._runtime, config, backup)
 
         logger.info("User created", extra={"extra_fields": {"username": username}})
         return {
             "username": username,
             "uuid": uid,
             "password": pwd,
-            "protocols": list(PROTOCOL_TAGS.keys()),
+            "protocols": [protocol for protocol, _ in configured],
             "created_at": datetime.now(tz=UTC),
         }
 
@@ -160,9 +141,22 @@ class UserService:
         if not removed:
             raise UserNotFoundError(f"User '{username}' not found")
 
+        for rule in config.route.rules:
+            if rule.auth_user and username in rule.auth_user:
+                rule.auth_user.remove(username)
+        config.route.rules = [
+            rule
+            for rule in config.route.rules
+            if not (
+                rule.outbound
+                and rule.outbound.startswith("outbound:")
+                and not rule.auth_user
+            )
+        ]
+
         _sync_v2ray_stats_users(config)
 
-        await self._save_and_reload(config, backup)
+        await commit_config(self._store, self._runtime, config, backup)
         logger.info("User deleted", extra={"extra_fields": {"username": username}})
 
     async def get_user(self, username: str) -> dict:

@@ -15,8 +15,16 @@
       "users": [],
       "tls": {
         "enabled": true,
-        "certificate_path": "/etc/letsencrypt/live/{{DOMAIN}}/fullchain.pem",
-        "key_path": "/etc/letsencrypt/live/{{DOMAIN}}/privkey.pem"
+        "server_name": "{{REALITY_SERVER_NAME}}",
+        "reality": {
+          "enabled": true,
+          "handshake": {
+            "server": "{{REALITY_SERVER_NAME}}",
+            "server_port": 443
+          },
+          "private_key": "{{REALITY_PRIVATE_KEY}}",
+          "short_id": ["{{REALITY_SHORT_ID}}"]
+        }
       },
       "multiplex": { "enabled": false }
     },

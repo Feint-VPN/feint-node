@@ -78,7 +78,7 @@ Creating or deleting a user follows one transaction-like flow:
 
 | Protocol | Runtime tag | User credential |
 | --- | --- | --- |
-| VLESS Vision TLS | `vless-reality-in` | UUID |
+| VLESS Vision REALITY | `vless-reality-in` | UUID |
 | VMess WebSocket | `vmess-ws-in` | UUID |
 | Trojan | `trojan-in` | Password |
 | Hysteria2 | `hysteria2-in` | Password |
@@ -331,8 +331,12 @@ Runtime values live in `.env.local`. Start from [`.env.example`](.env.example).
 | `SUBSCRIPTION_ENABLED` | `false` | Enable `/sub/{username}`. |
 | `SUB_URI_TEMPLATE` | `🌌 Feint \| {Protocol}` | Display label for generated URIs. |
 | `NODE_IMAGE` | `ghcr.io/feint-vpn/feint-node:latest` | Published node API image. |
-| `SINGBOX_IMAGE` | `ghcr.io/feint-vpn/feint-sing-box:v1.13.12-feint.1` | Feint sing-box runtime image. |
-| `VLESS_PORT` | configurable | VLESS Vision TLS listener. |
+| `SINGBOX_IMAGE` | `ghcr.io/feint-vpn/feint-sing-box:v1.13.19-feint.1` | Feint sing-box runtime image. |
+| `VLESS_PORT` | `443` | VLESS Vision REALITY listener. |
+| `REALITY_PRIVATE_KEY` | generated | Server-only REALITY private key. |
+| `REALITY_PUBLIC_KEY` | generated | Public key included in VLESS share URLs. |
+| `REALITY_SHORT_ID` | generated | Per-node REALITY short ID. |
+| `REALITY_SERVER_NAME` | `google.com` | TLS handshake camouflage name. |
 | `VMESS_PORT` | configurable | VMess WebSocket listener. |
 | `TROJAN_PORT` | configurable | Trojan listener. |
 | `HYSTERIA2_PORT` | configurable | Hysteria2 UDP listener. |
@@ -388,7 +392,7 @@ docker compose --env-file .env.local logs -f vpn-node-api sing-box
 docker compose --env-file .env.local restart vpn-node-api
 ```
 
-During a planned sing-box stop or restart, `v1.13.12` may log
+During a planned sing-box stop or restart, `v1.13.19` may log
 `sing-box did not closed properly: close v2ray server: ... use of closed network connection`.
 This is a harmless upstream double-close message when the container exits with code `0`,
 starts again and the node health check remains healthy. Investigate it only when shutdown
