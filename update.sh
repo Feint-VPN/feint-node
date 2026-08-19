@@ -145,7 +145,17 @@ fi
 "${COMPOSE[@]}" ps -q vpn-node-api | grep -q . \
     || die "vpn-node-api must be running before an update"
 
-OLD_COMMIT="$(git rev-parse HEAD)"
+OLD_COMMIT="${FEINT_UPDATE_OLD_COMMIT:-$(git rev-parse HEAD)}"
+info "Fetching origin/$BRANCH"
+git fetch origin "$BRANCH" --prune
+git reset --hard "origin/$BRANCH"
+if [[ "${FEINT_UPDATE_REEXEC:-0}" != 1 && "$(git rev-parse HEAD)" != "$OLD_COMMIT" ]]; then
+    args=(--dir "$INSTALL_DIR" --branch "$BRANCH")
+    [[ "$FORCE" == false ]] || args+=(--force)
+    FEINT_UPDATE_REEXEC=1 FEINT_UPDATE_OLD_COMMIT="$OLD_COMMIT" \
+        exec bash "$INSTALL_DIR/update.sh" "${args[@]}"
+fi
+
 ENV_BACKUP="$(mktemp "${ENV_FILE}.update.XXXXXX")"
 CONFIG_BACKUP="$(mktemp "${ENV_FILE}.config.XXXXXX")"
 cp "$ENV_FILE" "$ENV_BACKUP"
@@ -164,10 +174,6 @@ OLD_SINGBOX_IMAGE="$("${COMPOSE[@]}" images -q sing-box)"
 OLD_CERTBOT_IMAGE="$("${COMPOSE[@]}" images -q certbot)"
 
 trap rollback ERR
-
-info "Fetching origin/$BRANCH"
-git fetch origin "$BRANCH" --prune
-git reset --hard "origin/$BRANCH"
 
 DOCKER_GID="$(getent group docker | cut -d: -f3)"
 if [[ -z "$DOCKER_GID" ]]; then
