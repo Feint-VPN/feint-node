@@ -194,7 +194,7 @@ Example response:
 ```json
 {
   "status": "ok",
-  "api_version": "2.1",
+  "api_version": "2.2",
   "uptime": "02d 07h",
   "configuration": "available",
   "sing_box": "running",
@@ -216,6 +216,7 @@ part without additional probes.
 | Method | Path | Result |
 | --- | --- | --- |
 | `POST` | `/user` | Create one user across all protocol inbounds. |
+| `POST` | `/users` | Idempotently create up to 500 users in one config mutation. |
 | `GET` | `/user/{username}` | Read one local user. |
 | `GET` | `/users?limit=50&skip=0` | Read a paginated local user list. |
 | `DELETE` | `/user/{username}` | Remove the user from every inbound. |
@@ -223,6 +224,25 @@ part without additional probes.
 
 Usernames contain `3-50` ASCII letters, digits, `_` or `-`. A UUID and password
 may be supplied in the request; otherwise the node generates them.
+
+Bulk creation accepts `{"users": [...]}` with the same user objects as
+`POST /user`. Existing usernames are skipped, so a maintainer can safely retry
+the complete batch. One request saves the resulting configuration and reloads
+sing-box at most once; an unchanged batch does neither.
+
+### Outbounds
+
+| Method | Path | Result |
+| --- | --- | --- |
+| `PUT` | `/outbound/{outbound_id}` | Creates or replaces one managed outbound. |
+| `DELETE` | `/outbound/{outbound_id}` | Removes an unused managed outbound. |
+| `PUT` | `/outbound/{outbound_id}/user/{user_id}` | Idempotently routes one existing user. |
+| `POST` | `/outbound/{outbound_id}/users` | Idempotently routes up to 500 existing users. |
+| `DELETE` | `/outbound/{outbound_id}/user/{user_id}` | Removes one user from the outbound. |
+
+Bulk outbound access mutates one route rule and reloads sing-box at most once.
+Every supplied user must already exist on the node. Repeating an unchanged
+request performs no save or reload.
 
 ### Statistics
 
@@ -251,6 +271,15 @@ curl -X POST https://vpn.example.com:8337/user \
 ```
 
 The response contains the generated UUID, password and installed protocols.
+
+Provision a batch:
+
+```bash
+curl -X POST https://vpn.example.com:8337/users \
+  -H "X-API-Secret: $API_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"users":[{"username":"first"},{"username":"second"}]}'
+```
 
 Delete a user:
 

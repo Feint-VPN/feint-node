@@ -75,6 +75,62 @@ class OutboundService:
             await self._store.backup(),
         )
 
+    @serialized_mutation
+    async def add_user(self, outbound_id: str, user_id: str) -> None:
+        await self._add_users(outbound_id, {user_id})
+
+    @serialized_mutation
+    async def add_users(self, outbound_id: str, user_ids: set[str]) -> None:
+        await self._add_users(outbound_id, user_ids)
+
+    async def _add_users(self, outbound_id: str, user_ids: set[str]) -> None:
+        config = await self._store.load()
+        tag = f"{OUTBOUND_PREFIX}{outbound_id}"
+        if not any(outbound.tag == tag for outbound in config.outbounds):
+            raise OutboundNotFoundError(f"Outbound not found: {outbound_id}")
+
+        users = {
+            user.name
+            for inbound in config.inbounds
+            for user in inbound.users
+            if user.name
+        }
+        if missing := user_ids - users:
+            raise OutboundUserNotFoundError(
+                f"Users not found: {', '.join(sorted(missing))}"
+            )
+
+        rule = next((rule for rule in config.route.rules if rule.outbound == tag), None)
+        current = set(rule.auth_user or []) if rule is not None else set()
+        if user_ids <= current:
+            return
+        if rule is None:
+            config.route.rules.append(
+                RouteRule(action="route", auth_user=sorted(user_ids), outbound=tag)
+            )
+        else:
+            rule.auth_user = sorted(current | user_ids)
+        await commit_config(
+            self._store, self._runtime, config, await self._store.backup()
+        )
+
+    @serialized_mutation
+    async def remove_user(self, outbound_id: str, user_id: str) -> None:
+        config = await self._store.load()
+        tag = f"{OUTBOUND_PREFIX}{outbound_id}"
+        if not any(outbound.tag == tag for outbound in config.outbounds):
+            raise OutboundNotFoundError(f"Outbound not found: {outbound_id}")
+
+        rule = next((rule for rule in config.route.rules if rule.outbound == tag), None)
+        if rule is None or user_id not in (rule.auth_user or []):
+            return
+        rule.auth_user = [user for user in rule.auth_user or [] if user != user_id]
+        if not rule.auth_user:
+            config.route.rules.remove(rule)
+        await commit_config(
+            self._store, self._runtime, config, await self._store.backup()
+        )
+
     @staticmethod
     def _replace_outbound(
         config: SingBoxConfig,

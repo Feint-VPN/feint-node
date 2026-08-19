@@ -91,6 +91,26 @@ class UserService:
         requested_uuid: str | None = None,
         requested_password: str | None = None,
     ) -> dict:
+        return (
+            await self._create_users(
+                [(username, requested_uuid, requested_password)],
+                skip_existing=False,
+            )
+        )[0]
+
+    @serialized_mutation
+    async def create_users(
+        self,
+        users: list[tuple[str, str | None, str | None]],
+    ) -> int:
+        return len(await self._create_users(users, skip_existing=True))
+
+    async def _create_users(
+        self,
+        users: list[tuple[str, str | None, str | None]],
+        *,
+        skip_existing: bool,
+    ) -> list[dict]:
         config = await self._store.load()
         backup = await self._store.backup()
 
@@ -101,27 +121,37 @@ class UserService:
         ]
         if not configured:
             raise InboundNotFoundError("No supported inbound is configured")
-        if any(_user_in(inbound, username) for _, inbound in configured):
-            raise UserAlreadyExistsError(f"User '{username}' already exists")
 
-        uid = requested_uuid or str(_uuid.uuid4())
-        pwd = requested_password or generate_secure_password(32)
+        created = []
+        for username, requested_uuid, requested_password in users:
+            if any(_user_in(inbound, username) for _, inbound in configured):
+                if skip_existing:
+                    continue
+                raise UserAlreadyExistsError(f"User '{username}' already exists")
 
-        for protocol, inbound in configured:
-            inbound.users.append(_adapt_user(username, uid, pwd, protocol))
+            uid = requested_uuid or str(_uuid.uuid4())
+            pwd = requested_password or generate_secure_password(32)
+            for protocol, inbound in configured:
+                inbound.users.append(_adapt_user(username, uid, pwd, protocol))
+            created.append(
+                {
+                    "username": username,
+                    "uuid": uid,
+                    "password": pwd,
+                    "protocols": [protocol for protocol, _ in configured],
+                    "created_at": datetime.now(tz=UTC),
+                }
+            )
+
+        if not created:
+            return []
 
         _sync_v2ray_stats_users(config)
 
         await commit_config(self._store, self._runtime, config, backup)
 
-        logger.info("User created", extra={"extra_fields": {"username": username}})
-        return {
-            "username": username,
-            "uuid": uid,
-            "password": pwd,
-            "protocols": [protocol for protocol, _ in configured],
-            "created_at": datetime.now(tz=UTC),
-        }
+        logger.info("Users created", extra={"extra_fields": {"count": len(created)}})
+        return created
 
     @serialized_mutation
     async def delete_user(self, username: str) -> None:

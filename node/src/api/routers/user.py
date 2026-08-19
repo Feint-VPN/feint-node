@@ -2,6 +2,8 @@
 
 from api.depends import get_traffic_tracker, get_user_service, verify_api_secret
 from api.schemas.user import (
+    UserBulkCreateRequest,
+    UserBulkCreateResponse,
     UserConfigsResponse,
     UserCreateRequest,
     UserListResponse,
@@ -21,12 +23,10 @@ from utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-router = APIRouter(
-    prefix="/user", tags=["users"], dependencies=[Depends(verify_api_secret)]
-)
+router = APIRouter(tags=["users"], dependencies=[Depends(verify_api_secret)])
 
 
-@router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/user", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(
     body: UserCreateRequest,
     svc: UserService = Depends(get_user_service),
@@ -48,7 +48,25 @@ async def create_user(
         ) from error
 
 
-@router.delete("/{username}", status_code=status.HTTP_200_OK)
+@router.post("/users", response_model=UserBulkCreateResponse)
+async def create_users(
+    body: UserBulkCreateRequest,
+    svc: UserService = Depends(get_user_service),
+) -> UserBulkCreateResponse:
+    try:
+        created = await svc.create_users(
+            [(user.username, user.uuid, user.password) for user in body.users]
+        )
+        return UserBulkCreateResponse(created=created)
+    except (InboundNotFoundError, SingBoxReloadError, ConfigRollbackError) as error:
+        logger.exception("Failed to create users")
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Node configuration update failed",
+        ) from error
+
+
+@router.delete("/user/{username}", status_code=status.HTTP_200_OK)
 async def delete_user(
     username: str, svc: UserService = Depends(get_user_service)
 ) -> JSONResponse:
@@ -73,7 +91,7 @@ async def delete_user(
         ) from error
 
 
-@router.get("s", response_model=UserListResponse)
+@router.get("/users", response_model=UserListResponse)
 async def list_users(
     limit: int = Query(50, ge=1, le=100),
     skip: int = Query(0, ge=0),
@@ -83,7 +101,7 @@ async def list_users(
     return UserListResponse(**data)
 
 
-@router.get("/{username}", response_model=UserResponse)
+@router.get("/user/{username}", response_model=UserResponse)
 async def get_user(
     username: str, svc: UserService = Depends(get_user_service)
 ) -> UserResponse:
@@ -93,7 +111,7 @@ async def get_user(
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(e)) from e
 
 
-@router.get("/{username}/configs", response_model=UserConfigsResponse)
+@router.get("/user/{username}/configs", response_model=UserConfigsResponse)
 async def get_user_configs(
     username: str,
     server_domain: str = Query(...),
