@@ -8,7 +8,9 @@ firewall_apply() {
     local env_file="$1" ssh_port="$2" transition_port="${3:-}"
     local network_id bridge subnet
     allow() {
-        ufw allow "$@" || { error "Could not add UFW rule: $*"; return 1; }
+        local args
+        printf -v args ' %q' "$@"
+        ufw allow "$@" || { error "Could not add UFW rule:${args}"; return 1; }
     }
     network_id="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.NetworkID}}{{end}}' vpn-node-api)"
     bridge="br-${network_id:0:12}"
