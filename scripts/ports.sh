@@ -186,7 +186,8 @@ sync_firewall() {
     command -v ufw >/dev/null && ufw status | grep -q '^Status: active' || return 0
     [[ $EUID -eq 0 ]] || die "Run as root to synchronize the active firewall"
     local ssh_port
-    ssh_port="$(sshd_setting port)"
+    ssh_port="$(sshd_setting port)" || die "Could not determine the SSH port"
+    port_validate "$ssh_port" || die "Invalid SSH port: $ssh_port"
     firewall_apply "$ENV_FILE" "$ssh_port"
 }
 

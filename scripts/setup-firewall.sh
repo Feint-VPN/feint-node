@@ -67,9 +67,9 @@ docker inspect vpn-node-api >/dev/null 2>&1 || die "vpn-node-api must be running
 ssh_connection="${SSH_CONNECTION:-}"
 OLD_SSH_PORT="${ssh_connection##* }"
 if ! port_validate "$OLD_SSH_PORT"; then
-    OLD_SSH_PORT="$(sshd_setting port)"
+    OLD_SSH_PORT="$(sshd_setting port)" || die "Could not determine the current SSH port"
 fi
-[[ -n "$OLD_SSH_PORT" ]] || die "Could not determine the current SSH port"
+port_validate "$OLD_SSH_PORT" || die "Invalid current SSH port: $OLD_SSH_PORT"
 
 reserved=(80 "$OLD_SSH_PORT" "$API_PORT" "$VLESS_PORT" "$VMESS_PORT" "$TROJAN_PORT" "$HYSTERIA2_PORT" "$SHADOWSOCKS_PORT")
 if [[ -z "$NEW_SSH_PORT" ]]; then
