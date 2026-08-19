@@ -23,7 +23,10 @@ firewall_apply() {
         ufw allow "$(env_get SHADOWSOCKS_PORT "$env_file")/tcp" comment 'Feint Shadowsocks'
         ufw allow "$(env_get SHADOWSOCKS_PORT "$env_file")/udp" comment 'Feint Shadowsocks'
     fi
-    ufw allow in on "$bridge" from "$subnet" to any port 9090 proto tcp comment 'Feint Clash API internal'
-    ufw allow in on "$bridge" from "$subnet" to any port 10085 proto tcp comment 'Feint V2Ray API internal'
-    ufw --force enable >/dev/null
+    ufw allow in on "$bridge" from "$subnet" to any port 9090 proto tcp comment 'Feint Clash API internal' \
+        || { error "Could not allow the internal Clash API port"; return 1; }
+    ufw allow in on "$bridge" from "$subnet" to any port 10085 proto tcp comment 'Feint V2Ray API internal' \
+        || { error "Could not allow the internal V2Ray API port"; return 1; }
+    ufw --force enable >/dev/null \
+        || { error "Could not enable the Feint firewall policy"; return 1; }
 }
