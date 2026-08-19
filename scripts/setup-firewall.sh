@@ -67,7 +67,7 @@ docker inspect vpn-node-api >/dev/null 2>&1 || die "vpn-node-api must be running
 ssh_connection="${SSH_CONNECTION:-}"
 OLD_SSH_PORT="${ssh_connection##* }"
 if ! port_validate "$OLD_SSH_PORT"; then
-    OLD_SSH_PORT="$(sshd -T | awk '$1 == "port" { print $2; exit }')"
+    OLD_SSH_PORT="$(sshd_setting port)"
 fi
 [[ -n "$OLD_SSH_PORT" ]] || die "Could not determine the current SSH port"
 
@@ -170,7 +170,7 @@ if [[ ${#effective_ports[@]} -ne 1 || "${effective_ports[0]}" != "$NEW_SSH_PORT"
     error "The effective SSH configuration did not select only $NEW_SSH_PORT"
     false
 fi
-[[ "$(sshd -T | awk '$1 == "passwordauthentication" { print $2; exit }')" == no ]] \
+[[ "$(sshd_setting passwordauthentication)" == no ]] \
     || die "Password authentication is still enabled"
 
 info "Closing host ports outside the Feint allowlist"

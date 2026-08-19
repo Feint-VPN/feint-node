@@ -85,7 +85,7 @@ rollback() {
     git reset --hard "$OLD_COMMIT"
     cp "$ENV_BACKUP" "$ENV_FILE"
     source "$INSTALL_DIR/scripts/lib/firewall.sh"
-    firewall_apply "$ENV_FILE" "$(sshd -T | awk '$1 == "port" { print $2; exit }')"
+    firewall_apply "$ENV_FILE" "$(sshd_setting port)"
     restore_image "$OLD_NODE_IMAGE" "$NODE_IMAGE"
     restore_image "$OLD_SINGBOX_IMAGE" "$SINGBOX_IMAGE"
     restore_image "$OLD_CERTBOT_IMAGE" "$CERTBOT_IMAGE"
@@ -216,7 +216,7 @@ info "Waiting for node readiness"
 wait_for_status
 
 source "$INSTALL_DIR/scripts/lib/firewall.sh"
-firewall_apply "$ENV_FILE" "$(sshd -T | awk '$1 == "port" { print $2; exit }')"
+firewall_apply "$ENV_FILE" "$(sshd_setting port)"
 
 trap - ERR
 rm -f "$ENV_BACKUP" "$CONFIG_BACKUP"

@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+sshd_setting() {
+    sshd -T | awk -v key="$1" '$1 == key && !found { print $2; found=1 }'
+}
+
 firewall_apply() {
     local env_file="$1" ssh_port="$2" transition_port="${3:-}"
     local network_id bridge subnet
