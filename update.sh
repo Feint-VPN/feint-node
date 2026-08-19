@@ -86,8 +86,7 @@ rollback() {
     git reset --hard "$OLD_COMMIT"
     cp "$ENV_BACKUP" "$ENV_FILE"
     source "$INSTALL_DIR/scripts/lib/firewall.sh"
-    ssh_port="$(sshd_setting port)"
-    if port_validate "$ssh_port"; then
+    if sshd_setting port ssh_port && port_validate "$ssh_port"; then
         firewall_apply "$ENV_FILE" "$ssh_port"
     else
         error "Rollback could not determine the SSH port"
@@ -222,7 +221,10 @@ info "Waiting for node readiness"
 wait_for_status
 
 source "$INSTALL_DIR/scripts/lib/firewall.sh"
-SSH_PORT="$(sshd_setting port)" || die "Could not determine the SSH port"
+if ! sshd_setting port SSH_PORT; then
+    error "Could not determine the SSH port"
+    false
+fi
 port_validate "$SSH_PORT" || die "Invalid SSH port: $SSH_PORT"
 firewall_apply "$ENV_FILE" "$SSH_PORT"
 

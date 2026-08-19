@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
 
 sshd_setting() {
-    sshd -T | awk -v key="$1" '$1 == key && !found { print $2; found=1 }'
+    local key="$1" destination="$2" output value
+    output="$(mktemp)"
+    if ! sshd -T > "$output"; then
+        rm -f "$output"
+        return 1
+    fi
+    value="$(awk -v key="$key" '$1 == key && !found { print $2; found=1 }' "$output")"
+    rm -f "$output"
+    [[ -n "$value" ]] || return 1
+    printf -v "$destination" '%s' "$value"
 }
 
 firewall_apply() {
