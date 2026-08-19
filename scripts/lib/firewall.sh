@@ -10,7 +10,7 @@ firewall_apply() {
     allow() {
         local args
         printf -v args ' %q' "$@"
-        ufw allow "$@" || { error "Could not add UFW rule:${args}"; return 1; }
+        ufw allow "$@" || { printf 'Could not add UFW rule:%s\n' "$args" >&2; return 1; }
     }
     network_id="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.NetworkID}}{{end}}' vpn-node-api)"
     bridge="br-${network_id:0:12}"
