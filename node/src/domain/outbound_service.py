@@ -116,15 +116,22 @@ class OutboundService:
 
     @serialized_mutation
     async def remove_user(self, outbound_id: str, user_id: str) -> None:
+        await self._remove_users(outbound_id, {user_id})
+
+    @serialized_mutation
+    async def remove_users(self, outbound_id: str, user_ids: set[str]) -> None:
+        await self._remove_users(outbound_id, user_ids)
+
+    async def _remove_users(self, outbound_id: str, user_ids: set[str]) -> None:
         config = await self._store.load()
         tag = f"{OUTBOUND_PREFIX}{outbound_id}"
         if not any(outbound.tag == tag for outbound in config.outbounds):
             raise OutboundNotFoundError(f"Outbound not found: {outbound_id}")
 
         rule = next((rule for rule in config.route.rules if rule.outbound == tag), None)
-        if rule is None or user_id not in (rule.auth_user or []):
+        if rule is None or not user_ids.intersection(rule.auth_user or []):
             return
-        rule.auth_user = [user for user in rule.auth_user or [] if user != user_id]
+        rule.auth_user = [user for user in rule.auth_user or [] if user not in user_ids]
         if not rule.auth_user:
             config.route.rules.remove(rule)
         await commit_config(

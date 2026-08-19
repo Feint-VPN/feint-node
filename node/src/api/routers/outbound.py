@@ -121,3 +121,21 @@ async def remove_outbound_user(
             status.HTTP_500_INTERNAL_SERVER_ERROR, "Node configuration update failed"
         ) from error
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete("/{outbound_id}/users", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_outbound_users(
+    outbound_id: OutboundId,
+    body: OutboundUsersRequest,
+    service: OutboundService = Depends(get_outbound_service),
+) -> Response:
+    try:
+        await service.remove_users(outbound_id, body.users)
+    except OutboundNotFoundError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
+    except (SingBoxReloadError, ConfigRollbackError) as error:
+        logger.exception("Failed to remove outbound users")
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR, "Node configuration update failed"
+        ) from error
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

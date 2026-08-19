@@ -194,7 +194,7 @@ Example response:
 ```json
 {
   "status": "ok",
-  "api_version": "2.2",
+  "api_version": "2.3",
   "uptime": "02d 07h",
   "configuration": "available",
   "sing_box": "running",
@@ -239,6 +239,7 @@ sing-box at most once; an unchanged batch does neither.
 | `PUT` | `/outbound/{outbound_id}/user/{user_id}` | Idempotently routes one existing user. |
 | `POST` | `/outbound/{outbound_id}/users` | Idempotently routes up to 500 existing users. |
 | `DELETE` | `/outbound/{outbound_id}/user/{user_id}` | Removes one user from the outbound. |
+| `DELETE` | `/outbound/{outbound_id}/users` | Removes up to 500 users from the outbound. |
 
 Bulk outbound access mutates one route rule and reloads sing-box at most once.
 Every supplied user must already exist on the node. Repeating an unchanged
