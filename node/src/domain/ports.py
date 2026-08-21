@@ -43,6 +43,14 @@ class IConfigUrlBuilder(ABC):
     ) -> str: ...
 
     @abstractmethod
+    def amnezia_url(
+        self,
+        uuid: str,
+        domain: str,
+        port: int,
+    ) -> str: ...
+
+    @abstractmethod
     def vmess_url(
         self, uuid: str, domain: str, port: int, path: str = "/vmess", label: str = ""
     ) -> str: ...

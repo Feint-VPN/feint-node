@@ -69,6 +69,7 @@ The public runtime contract is versioned independently through
 - `/status` for config, sing-box and statistics readiness plus node telemetry;
 - `/user` for one local user and `/users` for paginated reads or idempotent
   provisioning batches of up to 500 users;
+- `/user/{username}/amnezia` for a native `vpn://` AmneziaVPN XRay profile;
 - `/outbound` for shared cascade outbounds and idempotent user assignment;
 - `/stats` for local traffic counters;
 - optional `/sub/{username}` for one-node subscription output.

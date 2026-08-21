@@ -2,6 +2,7 @@
 
 from api.depends import get_traffic_tracker, get_user_service, verify_api_secret
 from api.schemas.user import (
+    AmneziaConfigResponse,
     UserBulkCreateRequest,
     UserBulkCreateResponse,
     UserConfigsResponse,
@@ -122,3 +123,16 @@ async def get_user_configs(
         return UserConfigsResponse(**data)
     except UserNotFoundError as e:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(e)) from e
+
+
+@router.get("/user/{username}/amnezia", response_model=AmneziaConfigResponse)
+async def get_user_amnezia_config(
+    username: str,
+    server_domain: str = Query(...),
+    svc: UserService = Depends(get_user_service),
+) -> AmneziaConfigResponse:
+    try:
+        data = await svc.get_user_amnezia_config(username, server_domain)
+        return AmneziaConfigResponse(**data)
+    except UserNotFoundError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error

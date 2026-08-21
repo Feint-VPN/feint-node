@@ -1,6 +1,7 @@
 """API request/response schemas for user management."""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -48,6 +49,12 @@ class ProtocolConfig(BaseModel):
 class UserConfigsResponse(BaseModel):
     username: str
     configs: dict[str, ProtocolConfig | None]
+
+
+class AmneziaConfigResponse(BaseModel):
+    username: str
+    protocol: Literal["vless"]
+    config_url: str
 
 
 class UserStats(BaseModel):

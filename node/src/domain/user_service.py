@@ -331,3 +331,18 @@ class UserService:
             }
 
         return {"username": username, "configs": configs}
+
+    async def get_user_amnezia_config(self, username: str, domain: str) -> dict:
+        config = await self._store.load()
+        inbound = _find_inbound(config, PROTOCOL_TAGS["vless"])
+        user = _find_user(inbound, username) if inbound is not None else None
+        if user is None:
+            raise UserNotFoundError(f"VLESS user '{username}' not found")
+
+        return {
+            "username": username,
+            "protocol": "vless",
+            "config_url": self._url_builder.amnezia_url(
+                user.uuid or "", domain, inbound.listen_port
+            ),
+        }

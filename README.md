@@ -221,6 +221,7 @@ part without additional probes.
 | `GET` | `/users?limit=50&skip=0` | Read a paginated local user list. |
 | `DELETE` | `/user/{username}` | Remove the user from every inbound. |
 | `GET` | `/user/{username}/configs?server_domain=...` | Build protocol URLs. |
+| `GET` | `/user/{username}/amnezia?server_domain=...` | Build a native AmneziaVPN `vpn://` XRay profile. |
 
 Usernames contain `3-50` ASCII letters, digits, `_` or `-`. A UUID and password
 may be supplied in the request; otherwise the node generates them.
@@ -292,6 +293,11 @@ curl -X DELETE \
 
 Deletion removes the user from every inbound and clears their local traffic
 counters on a best-effort basis.
+
+> **TODO — AmneziaWG:** when AWG support is added, deleting a user or expiring
+> their access must also remove the corresponding AWG peer. Hiding the profile
+> or stopping subscription output is not sufficient because an already imported
+> private key remains valid until the server revokes its peer.
 
 ## 🌌 Subscriptions
 

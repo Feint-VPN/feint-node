@@ -151,6 +151,7 @@ All write endpoints require the `X-API-Secret` header.
 | `GET`    | `/user/{username}`         | Get user info                                       |
 | `DELETE` | `/user/{username}`         | Delete user                                         |
 | `GET`    | `/user/{username}/configs` | Per-protocol share URLs                             |
+| `GET`    | `/user/{username}/amnezia` | Native AmneziaVPN `vpn://` XRay profile             |
 | `GET`    | `/sub/{username}`          | Hiddify subscription (public, uses `SERVER_DOMAIN`) |
 | `GET`    | `/sub/settings`            | Read subscription settings                          |
 | `PUT`    | `/sub/settings`            | Update `SUB_URI_TEMPLATE`                           |

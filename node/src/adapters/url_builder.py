@@ -2,6 +2,7 @@
 
 import base64
 import json
+import zlib
 from urllib.parse import quote, urlencode
 
 from domain.ports import IConfigUrlBuilder
@@ -32,6 +33,69 @@ class UrlBuilder(IConfigUrlBuilder):
             }
         )
         return f"vless://{uuid}@{domain}:{port}?{params}#{quote(domain)}"
+
+    def amnezia_url(self, uuid: str, domain: str, port: int) -> str:
+        xray = {
+            "log": {"loglevel": "warning"},
+            "inbounds": [
+                {
+                    "listen": "127.0.0.1",
+                    "port": 10808,
+                    "protocol": "socks",
+                    "settings": {"auth": "noauth", "udp": True},
+                    "tag": "socks",
+                }
+            ],
+            "outbounds": [
+                {
+                    "protocol": "vless",
+                    "settings": {
+                        "vnext": [
+                            {
+                                "address": domain,
+                                "port": port,
+                                "users": [
+                                    {
+                                        "encryption": "none",
+                                        "flow": "xtls-rprx-vision",
+                                        "id": uuid,
+                                    }
+                                ],
+                            }
+                        ]
+                    },
+                    "streamSettings": {
+                        "network": "tcp",
+                        "realitySettings": {
+                            "fingerprint": "chrome",
+                            "publicKey": self.public_key,
+                            "serverName": self.server_name,
+                            "shortId": self.short_id,
+                            "spiderX": "/",
+                        },
+                        "security": "reality",
+                    },
+                    "tag": "proxy",
+                }
+            ],
+        }
+        profile = {
+            "containers": [
+                {
+                    "container": "amnezia-xray",
+                    "xray": {
+                        "isThirdPartyConfig": True,
+                        "last_config": json.dumps(xray, separators=(",", ":")),
+                    },
+                }
+            ],
+            "defaultContainer": "amnezia-xray",
+            "description": domain,
+            "hostName": domain,
+        }
+        payload = json.dumps(profile, separators=(",", ":")).encode()
+        compressed = len(payload).to_bytes(4, "big") + zlib.compress(payload, 8)
+        return f"vpn://{base64.urlsafe_b64encode(compressed).decode().rstrip('=')}"
 
     def vmess_url(
         self, uuid: str, domain: str, port: int, path: str = "/vmess", label: str = ""
