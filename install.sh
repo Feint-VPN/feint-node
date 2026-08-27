@@ -539,7 +539,7 @@ if [[ "$VPN_RUNTIME" == xray ]]; then
     info "Rendering and validating Xray config..."
     compose run --rm --no-deps vpn-node-api \
         python -m adapters.xray_config \
-        /opt/sing-box/config.json /opt/sing-box/xray.json
+        /opt/sing-box/config.json /opt/sing-box/xray.json </dev/null
     docker run --rm --user 1000:1000 \
         -v "${COMPOSE_SINGBOX_VOL}:/opt/sing-box:ro" \
         "$XRAY_IMAGE" run -test -config /opt/sing-box/xray.json \
