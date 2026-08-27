@@ -79,6 +79,7 @@ class XrayDockerRuntime(DockerRuntime):
         self,
         config_path: str,
         xray_config_path: str,
+        runtime_config_path: str | None = None,
         container_name: str = "xray",
         timeout: int = 30,
         client=None,
@@ -86,9 +87,23 @@ class XrayDockerRuntime(DockerRuntime):
         super().__init__(container_name, timeout, client)
         self.config_path = config_path
         self.xray_config_path = xray_config_path
+        self.runtime_config_path = runtime_config_path or xray_config_path
 
     async def reload(self) -> None:
         await asyncio.to_thread(
             render_xray_config, self.config_path, self.xray_config_path
         )
+        try:
+            container = await asyncio.to_thread(
+                self._client.containers.get, self.container_name
+            )
+            result = await asyncio.to_thread(
+                container.exec_run,
+                ["xray", "run", "-test", "-config", self.runtime_config_path],
+            )
+        except (DockerException, NotFound) as error:
+            raise SingBoxReloadError(str(error)) from error
+        if result.exit_code:
+            output = result.output.decode(errors="replace").strip()
+            raise SingBoxReloadError(output or "Generated Xray config is invalid")
         await super().reload()
