@@ -68,6 +68,7 @@ def render_xray_config(source: str, destination: str) -> None:
                         "target": f"{handshake.get('server', server_name)}:{handshake.get('server_port', 443)}",
                         "serverNames": [server_name],
                         "privateKey": private_key,
+                        "minClientVer": "0.0.0",
                         "shortIds": short_ids,
                     },
                 },
