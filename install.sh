@@ -585,7 +585,7 @@ if [[ -n "$NEW_SSH_PORT" ]]; then
     [[ -n "$SSH_PUBLIC_KEY" ]] || die "--new-ssh-port requires --ssh-public-key"
     SSH_ARGS+=(--ssh-port "$NEW_SSH_PORT" --ssh-public-key "$SSH_PUBLIC_KEY" --no-confirm)
 fi
-bash "$INSTALL_DIR/scripts/setup-ssh.sh" "${SSH_ARGS[@]}"
+bash "$INSTALL_DIR/scripts/setup-ssh.sh" "${SSH_ARGS[@]}" || die "SSH setup failed"
 wait_for_status "$STATUS_URL" \
     || die "SSH was secured, but the complete node status is not healthy"
 success "API status is healthy"

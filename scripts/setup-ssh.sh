@@ -96,13 +96,10 @@ SSH_CHANGED=false
 
 restart_ssh() {
     systemctl daemon-reload
-    if systemctl is-active --quiet ssh.socket; then
-        systemctl restart ssh.socket
-    elif systemctl list-unit-files ssh.service >/dev/null 2>&1; then
-        systemctl restart ssh.service
-    else
-        systemctl restart sshd.service
-    fi
+    systemctl disable --now ssh.socket >/dev/null 2>&1 || true
+    systemctl unmask ssh.service >/dev/null
+    systemctl enable ssh.service >/dev/null
+    systemctl restart ssh.service
 }
 
 restore_ssh() {
