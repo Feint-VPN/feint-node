@@ -90,6 +90,20 @@ may change independently of the node API.
 
 ## 🌙 Installation
 
+Use the native Xray-core runtime for a VLESS Reality-only node:
+
+```bash
+bash install.sh \
+  --domain vpn.example.com \
+  --email admin@example.com \
+  --template vless \
+  --runtime xray
+```
+
+`sing-box` remains the default. Xray mode keeps the same user, outbound,
+subscription, status and traffic-statistics API contract. Its public inbound
+currently uses only the `vless` template; Hysteria2 outbounds remain available.
+
 The installer prepares Docker, validates ports, obtains the TLS certificate,
 generates secrets and starts the node:
 
@@ -110,8 +124,8 @@ Requirements:
 The installer checks occupied and duplicated ports before changing the server.
 It reports the owning process and never terminates another service
 automatically.
-Before starting containers, it renders `templates/sing-box.json.tpl` with the
-generated ports and secrets and validates the result with `sing-box check`.
+Before starting containers, it renders the selected canonical template and
+validates the resulting sing-box or Xray configuration with the selected core.
 
 `--template vless` installs only VLESS Vision REALITY on TCP `38519`, using
 `vkvideo.ru:443` as the REALITY handshake target. Every installation generates
@@ -129,6 +143,7 @@ its own REALITY key pair and short ID.
 | `--sub` | `true` | Enable the node subscription endpoint. |
 | `--branch` | `main` | Repository branch installed on the server. |
 | `--template` | `default` | Runtime profile: `default`, `vless`, or `hysteria2`. |
+| `--runtime` | `sing-box` | VPN core: `sing-box` or `xray`. |
 | `--new-ssh-port` | random | Use this fixed SSH port and skip interactive confirmation for SDK installation. |
 | `--ssh-public-key` | existing key | Public key installed before password SSH is disabled. Required with `--new-ssh-port`. |
 
@@ -367,6 +382,9 @@ Runtime values live in `.env.local`. Start from [`.env.example`](.env.example).
 | `SUB_URI_TEMPLATE` | `🌌 Feint \| {Protocol}` | Display label for generated URIs. |
 | `NODE_IMAGE` | `ghcr.io/feint-vpn/feint-node:latest` | Published node API image. |
 | `SINGBOX_IMAGE` | `ghcr.io/feint-vpn/feint-sing-box:v1.13.19-feint.1` | Feint sing-box runtime image. |
+| `XRAY_IMAGE` | `ghcr.io/xtls/xray-core:26.7.28` | Official Xray runtime image. |
+| `XRAY_MIN_CLIENT_VERSION` | `1.8.0` | Lowest REALITY client version accepted in Xray mode. |
+| `VPN_RUNTIME` | `sing-box` | Selected VPN core: `sing-box` or `xray`. |
 | `VLESS_PORT` | `443` | VLESS Vision REALITY listener. |
 | `REALITY_PRIVATE_KEY` | generated | Server-only REALITY private key. |
 | `REALITY_PUBLIC_KEY` | generated | Public key included in VLESS share URLs. |
@@ -376,7 +394,8 @@ Runtime values live in `.env.local`. Start from [`.env.example`](.env.example).
 | `TROJAN_PORT` | configurable | Trojan listener. |
 | `HYSTERIA2_PORT` | configurable | Hysteria2 UDP listener. |
 | `SHADOWSOCKS_PORT` | configurable | Shadowsocks listener. |
-| `CONFIG_PATH` | `/opt/sing-box/config.json` | Persisted sing-box configuration. |
+| `CONFIG_PATH` | `/opt/sing-box/config.json` | Persisted canonical node configuration. |
+| `XRAY_CONFIG_PATH` | `/opt/sing-box/xray.json` | Generated Xray runtime configuration. |
 | `BACKUP_DIR` | `/opt/sing-box/backups` | Atomic rollback backups. |
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | Container control socket. |
 | `SINGBOX_CONTAINER_NAME` | `sing-box` | Managed runtime container. |

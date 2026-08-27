@@ -59,7 +59,7 @@ async def _rollback(
         await runtime.reload()
     except Exception as error:
         raise ConfigRollbackError(
-            "The previous sing-box configuration could not be recovered."
+            "The previous VPN configuration could not be recovered."
         ) from error
 
 

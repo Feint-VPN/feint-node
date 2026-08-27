@@ -19,6 +19,10 @@ class Settings:
         # Config Paths
         self.CONFIG_PATH: str = os.getenv("CONFIG_PATH", "/opt/sing-box/config.json")
         self.BACKUP_DIR: str = os.getenv("BACKUP_DIR", "/opt/sing-box/backups")
+        self.VPN_RUNTIME: str = os.getenv("VPN_RUNTIME", "sing-box")
+        self.XRAY_CONFIG_PATH: str = os.getenv(
+            "XRAY_CONFIG_PATH", "/opt/sing-box/xray.json"
+        )
 
         # Docker Settings
         self.DOCKER_SOCKET: str = os.getenv("DOCKER_SOCKET", "/var/run/docker.sock")

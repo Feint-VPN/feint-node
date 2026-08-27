@@ -49,6 +49,8 @@ ENV_FILE="$INSTALL_DIR/.env.local"
 source "$INSTALL_DIR/scripts/lib/ports.sh"
 COMPOSE=(docker compose --env-file "$ENV_FILE" -f "$INSTALL_DIR/docker-compose.yml")
 CONFIG_PATH="$(env_get CONFIG_PATH "$ENV_FILE" /opt/sing-box/config.json)"
+VPN_RUNTIME="$(env_get VPN_RUNTIME "$ENV_FILE" sing-box)"
+XRAY_CONFIG_PATH="$(env_get XRAY_CONFIG_PATH "$ENV_FILE" /opt/sing-box/xray.json)"
 
 detect_branch() {
     git symbolic-ref --quiet --short HEAD 2>/dev/null \
@@ -92,12 +94,13 @@ rollback() {
         error "Rollback could not determine the SSH port"
     fi
     restore_image "$OLD_NODE_IMAGE" "$NODE_IMAGE"
-    restore_image "$OLD_SINGBOX_IMAGE" "$SINGBOX_IMAGE"
+    restore_image "$OLD_RUNTIME_IMAGE" "$VPN_RUNTIME_IMAGE"
     restore_image "$OLD_CERTBOT_IMAGE" "$CERTBOT_IMAGE"
     "${COMPOSE[@]}" up -d --no-build --remove-orphans
     "${COMPOSE[@]}" cp "$CONFIG_BACKUP" "vpn-node-api:$CONFIG_PATH"
     "${COMPOSE[@]}" exec -T --user root vpn-node-api sh -c \
         "chown 1000:1000 '$CONFIG_PATH' && chmod 600 '$CONFIG_PATH'" </dev/null
+    prepare_runtime_config
     "${COMPOSE[@]}" restart sing-box
     if wait_for_status; then
         success "Previous deployment restored"
@@ -128,11 +131,22 @@ sync_template() {
     rm -f "$ruleset"
     "${COMPOSE[@]}" exec -T vpn-node-api python "$helper" \
         "$template" "$CONFIG_PATH" "$CONFIG_PATH.next" </dev/null
-    "${COMPOSE[@]}" exec -T sing-box sing-box check \
-        -c "$CONFIG_PATH.next" </dev/null
     "${COMPOSE[@]}" exec -T vpn-node-api mv \
         "$CONFIG_PATH.next" "$CONFIG_PATH" </dev/null
+    prepare_runtime_config
     "${COMPOSE[@]}" restart sing-box
+}
+
+prepare_runtime_config() {
+    if [[ "$VPN_RUNTIME" == xray ]]; then
+        "${COMPOSE[@]}" exec -T vpn-node-api python -m adapters.xray_config \
+            "$CONFIG_PATH" "$XRAY_CONFIG_PATH" </dev/null
+        "${COMPOSE[@]}" exec -T sing-box xray run -test \
+            -config "$XRAY_CONFIG_PATH" </dev/null
+    else
+        "${COMPOSE[@]}" exec -T sing-box sing-box check \
+            -c "$CONFIG_PATH" </dev/null
+    fi
 }
 
 header "Feint VPN Node Update"
@@ -165,13 +179,25 @@ cp "$ENV_FILE" "$ENV_BACKUP"
 
 NODE_IMAGE="$(env_get NODE_IMAGE "$ENV_FILE" ghcr.io/feint-vpn/feint-node:latest)"
 SINGBOX_IMAGE="$(env_get SINGBOX_IMAGE "$ENV_FILE" ghcr.io/feint-vpn/feint-sing-box:v1.13.19-feint.1)"
-if [[ "$SINGBOX_IMAGE" == ghcr.io/feint-vpn/feint-sing-box:v1.13.12-feint.1 ]]; then
+XRAY_IMAGE="$(env_get XRAY_IMAGE "$ENV_FILE" ghcr.io/xtls/xray-core:26.7.28)"
+if [[ "$VPN_RUNTIME" == sing-box && "$SINGBOX_IMAGE" == ghcr.io/feint-vpn/feint-sing-box:v1.13.12-feint.1 ]]; then
     SINGBOX_IMAGE=ghcr.io/feint-vpn/feint-sing-box:v1.13.19-feint.1
     env_set SINGBOX_IMAGE "$SINGBOX_IMAGE" "$ENV_FILE"
 fi
+VPN_RUNTIME_IMAGE="$(env_get VPN_RUNTIME_IMAGE "$ENV_FILE" "$SINGBOX_IMAGE")"
+[[ "$VPN_RUNTIME" != xray ]] || VPN_RUNTIME_IMAGE="$XRAY_IMAGE"
+env_set VPN_RUNTIME_IMAGE "$VPN_RUNTIME_IMAGE" "$ENV_FILE"
+if [[ "$VPN_RUNTIME" == xray ]]; then
+    env_set VPN_RUNTIME_CONTAINER_NAME xray "$ENV_FILE"
+    env_set VPN_RUNTIME_COMMAND 'run -config /opt/sing-box/xray.json' "$ENV_FILE"
+    env_set XRAY_CONFIG_PATH "$XRAY_CONFIG_PATH" "$ENV_FILE"
+else
+    env_set VPN_RUNTIME_CONTAINER_NAME sing-box "$ENV_FILE"
+    env_set VPN_RUNTIME_COMMAND 'run -c /opt/sing-box/config.json' "$ENV_FILE"
+fi
 CERTBOT_IMAGE="certbot/certbot:latest"
 OLD_NODE_IMAGE="$("${COMPOSE[@]}" images -q vpn-node-api)"
-OLD_SINGBOX_IMAGE="$("${COMPOSE[@]}" images -q sing-box)"
+OLD_RUNTIME_IMAGE="$("${COMPOSE[@]}" images -q sing-box)"
 OLD_CERTBOT_IMAGE="$("${COMPOSE[@]}" images -q certbot)"
 
 trap rollback ERR
@@ -189,9 +215,15 @@ info "Pulling service images"
 if [[ -z "$(env_get REALITY_PRIVATE_KEY "$ENV_FILE")" \
     || -z "$(env_get REALITY_PUBLIC_KEY "$ENV_FILE")" \
     || -z "$(env_get REALITY_SHORT_ID "$ENV_FILE")" ]]; then
-    REALITY_KEYS="$(docker run --rm "$SINGBOX_IMAGE" generate reality-keypair)"
-    REALITY_PRIVATE_KEY="$(sed -n 's/^PrivateKey: //p' <<< "$REALITY_KEYS")"
-    REALITY_PUBLIC_KEY="$(sed -n 's/^PublicKey: //p' <<< "$REALITY_KEYS")"
+    if [[ "$VPN_RUNTIME" == xray ]]; then
+        REALITY_KEYS="$(docker run --rm "$XRAY_IMAGE" x25519)"
+        REALITY_PRIVATE_KEY="$(sed -n 's/^PrivateKey: //p' <<< "$REALITY_KEYS")"
+        REALITY_PUBLIC_KEY="$(sed -n 's/^Password (PublicKey): //p' <<< "$REALITY_KEYS")"
+    else
+        REALITY_KEYS="$(docker run --rm "$SINGBOX_IMAGE" generate reality-keypair)"
+        REALITY_PRIVATE_KEY="$(sed -n 's/^PrivateKey: //p' <<< "$REALITY_KEYS")"
+        REALITY_PUBLIC_KEY="$(sed -n 's/^PublicKey: //p' <<< "$REALITY_KEYS")"
+    fi
     [[ -n "$REALITY_PRIVATE_KEY" && -n "$REALITY_PUBLIC_KEY" ]] \
         || { error "Could not generate a REALITY key pair"; false; }
     env_set REALITY_PRIVATE_KEY "$REALITY_PRIVATE_KEY" "$ENV_FILE"
@@ -199,6 +231,10 @@ if [[ -z "$(env_get REALITY_PRIVATE_KEY "$ENV_FILE")" \
     env_set REALITY_SHORT_ID "$(openssl rand -hex 8)" "$ENV_FILE"
 fi
 NODE_TEMPLATE="$(env_get NODE_TEMPLATE "$ENV_FILE" default)"
+if [[ "$VPN_RUNTIME" == xray && "$NODE_TEMPLATE" != vless ]]; then
+    error "Xray runtime requires the vless template"
+    false
+fi
 REALITY_SERVER_NAME_DEFAULT=google.com
 [[ "$NODE_TEMPLATE" != vless ]] || REALITY_SERVER_NAME_DEFAULT=vkvideo.ru
 env_set REALITY_SERVER_NAME \

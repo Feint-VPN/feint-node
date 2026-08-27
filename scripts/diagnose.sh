@@ -68,10 +68,11 @@ if "${COMPOSE[@]}" ps -q vpn-node-api | grep -q .; then
 else
     fail 'vpn-node-api container is missing'
 fi
+runtime="$(env_get VPN_RUNTIME "$ENV_FILE" sing-box)"
 if "${COMPOSE[@]}" ps -q sing-box | grep -q .; then
-    ok 'sing-box container exists'
+    ok "$runtime container exists"
 else
-    fail 'sing-box container is missing'
+    fail "$runtime container is missing"
 fi
 
 printf '\nRuntime\n'
@@ -86,11 +87,15 @@ else
     fail 'Authenticated API status failed'
 fi
 
-if "${COMPOSE[@]}" exec -T sing-box \
-    sing-box check -c /opt/sing-box/config.json >/dev/null 2>&1; then
-    ok 'sing-box configuration is valid'
+if [[ "$runtime" == xray ]]; then
+    runtime_check=(xray run -test -config /opt/sing-box/xray.json)
 else
-    fail 'sing-box configuration check failed'
+    runtime_check=(sing-box check -c /opt/sing-box/config.json)
+fi
+if "${COMPOSE[@]}" exec -T sing-box "${runtime_check[@]}" >/dev/null 2>&1; then
+    ok "$runtime configuration is valid"
+else
+    fail "$runtime configuration check failed"
 fi
 
 printf '\nListeners\n'

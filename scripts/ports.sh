@@ -58,6 +58,8 @@ done
 port_check_tool_available || die "Port checks require iproute2 (ss) or net-tools (netstat)"
 COMPOSE=(docker compose --env-file "$ENV_FILE" -f "$INSTALL_DIR/docker-compose.yml")
 CONFIG_PATH="$(env_get CONFIG_PATH "$ENV_FILE" /opt/sing-box/config.json)"
+VPN_RUNTIME="$(env_get VPN_RUNTIME "$ENV_FILE" sing-box)"
+XRAY_CONFIG_PATH="$(env_get XRAY_CONFIG_PATH "$ENV_FILE" /opt/sing-box/xray.json)"
 
 show_ports() {
     local file="${1:-$ENV_FILE}" key value protocol
@@ -182,6 +184,17 @@ wait_for_status() {
     return 1
 }
 
+prepare_runtime_config() {
+    if [[ "$VPN_RUNTIME" == xray ]]; then
+        "${COMPOSE[@]}" exec -T vpn-node-api python -m adapters.xray_config \
+            "$CONFIG_PATH" "$XRAY_CONFIG_PATH"
+        "${COMPOSE[@]}" exec -T sing-box xray run -test \
+            -config "$XRAY_CONFIG_PATH"
+    else
+        "${COMPOSE[@]}" exec -T sing-box sing-box check -c "$CONFIG_PATH"
+    fi
+}
+
 sync_firewall() {
     command -v ufw >/dev/null && ufw status | grep -q '^Status: active' || return 0
     [[ $EUID -eq 0 ]] || die "Run as root to synchronize the active firewall"
@@ -198,6 +211,7 @@ restore_ports() {
     "${COMPOSE[@]}" cp "$config_backup" "vpn-node-api:$CONFIG_PATH" || failed=true
     "${COMPOSE[@]}" exec -T --user root vpn-node-api sh -c \
         "chown 1000:1000 '$CONFIG_PATH' && chmod 600 '$CONFIG_PATH'" || failed=true
+    prepare_runtime_config || failed=true
     "${COMPOSE[@]}" restart sing-box || failed=true
     sync_firewall || failed=true
     [[ "$failed" == false ]]
@@ -213,7 +227,7 @@ apply_ports() {
     if ! cp "$staged" "$ENV_FILE" \
         || ! "${COMPOSE[@]}" up -d --force-recreate vpn-node-api \
         || ! render_singbox_ports \
-        || ! "${COMPOSE[@]}" exec -T sing-box sing-box check -c /opt/sing-box/config.json \
+        || ! prepare_runtime_config \
         || ! "${COMPOSE[@]}" restart sing-box \
         || ! wait_for_status \
         || ! sync_firewall; then
