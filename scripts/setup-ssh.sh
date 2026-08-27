@@ -52,6 +52,14 @@ command -v sshd >/dev/null || die "sshd is required"
 command -v systemctl >/dev/null || die "systemd is required"
 
 source "$INSTALL_DIR/scripts/lib/ports.sh"
+
+sshd_setting() {
+    local value
+    value="$(sshd -T | awk -v key="$1" '$1 == key { print $2; exit }')" || return 1
+    [[ -n "$value" ]] || return 1
+    printf -v "$2" '%s' "$value"
+}
+
 port_check_tool_available || die "Port checks require iproute2 (ss)"
 port_require_unique_config "$ENV_FILE" || exit 1
 
