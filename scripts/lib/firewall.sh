@@ -33,14 +33,22 @@ firewall_apply() {
     [[ -z "$transition_port" ]] || allow "$transition_port/tcp" comment 'Feint SSH transition'
     allow 80/tcp comment 'Feint ACME'
     allow "$(env_get API_PORT "$env_file")/tcp" comment 'Feint API'
-    allow "$(env_get HYSTERIA2_PORT "$env_file")/udp" comment 'Feint Hysteria2'
-    if [[ "$(env_get NODE_TEMPLATE "$env_file" default)" == default ]]; then
-        allow "$(env_get VLESS_PORT "$env_file")/tcp" comment 'Feint VLESS'
-        allow "$(env_get VMESS_PORT "$env_file")/tcp" comment 'Feint VMess'
-        allow "$(env_get TROJAN_PORT "$env_file")/tcp" comment 'Feint Trojan'
-        allow "$(env_get SHADOWSOCKS_PORT "$env_file")/tcp" comment 'Feint Shadowsocks'
-        allow "$(env_get SHADOWSOCKS_PORT "$env_file")/udp" comment 'Feint Shadowsocks'
-    fi
+    case "$(env_get NODE_TEMPLATE "$env_file" default)" in
+        default)
+            allow "$(env_get VLESS_PORT "$env_file")/tcp" comment 'Feint VLESS'
+            allow "$(env_get VMESS_PORT "$env_file")/tcp" comment 'Feint VMess'
+            allow "$(env_get TROJAN_PORT "$env_file")/tcp" comment 'Feint Trojan'
+            allow "$(env_get HYSTERIA2_PORT "$env_file")/udp" comment 'Feint Hysteria2'
+            allow "$(env_get SHADOWSOCKS_PORT "$env_file")/tcp" comment 'Feint Shadowsocks'
+            allow "$(env_get SHADOWSOCKS_PORT "$env_file")/udp" comment 'Feint Shadowsocks'
+            ;;
+        vless)
+            allow "$(env_get VLESS_PORT "$env_file")/tcp" comment 'Feint VLESS'
+            ;;
+        hysteria2)
+            allow "$(env_get HYSTERIA2_PORT "$env_file")/udp" comment 'Feint Hysteria2'
+            ;;
+    esac
     allow in on "$bridge" from "$subnet" to any port 9090 proto tcp comment 'Feint Clash API internal'
     allow in on "$bridge" from "$subnet" to any port 10085 proto tcp comment 'Feint V2Ray API internal'
     ufw --force enable >/dev/null \

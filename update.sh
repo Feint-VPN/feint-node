@@ -114,6 +114,7 @@ sync_template() {
     template_name="$(env_get NODE_TEMPLATE "$ENV_FILE" default)"
     case "$template_name" in
         default) template_path="$INSTALL_DIR/templates/sing-box.json.tpl" ;;
+        vless) template_path="$INSTALL_DIR/templates/vless.json.tpl" ;;
         hysteria2) template_path="$INSTALL_DIR/templates/hysteria2.json.tpl" ;;
         *) die "Unknown node template: $template_name" ;;
     esac
@@ -197,9 +198,14 @@ if [[ -z "$(env_get REALITY_PRIVATE_KEY "$ENV_FILE")" \
     env_set REALITY_PUBLIC_KEY "$REALITY_PUBLIC_KEY" "$ENV_FILE"
     env_set REALITY_SHORT_ID "$(openssl rand -hex 8)" "$ENV_FILE"
 fi
-env_set REALITY_SERVER_NAME "$(env_get REALITY_SERVER_NAME "$ENV_FILE" google.com)" "$ENV_FILE"
+NODE_TEMPLATE="$(env_get NODE_TEMPLATE "$ENV_FILE" default)"
+REALITY_SERVER_NAME_DEFAULT=google.com
+[[ "$NODE_TEMPLATE" != vless ]] || REALITY_SERVER_NAME_DEFAULT=vkvideo.ru
+env_set REALITY_SERVER_NAME \
+    "$(env_get REALITY_SERVER_NAME "$ENV_FILE" "$REALITY_SERVER_NAME_DEFAULT")" \
+    "$ENV_FILE"
 
-if [[ "$(env_get VLESS_PORT "$ENV_FILE")" != 443 ]]; then
+if [[ "$NODE_TEMPLATE" == default && "$(env_get VLESS_PORT "$ENV_FILE")" != 443 ]]; then
     [[ "$(env_get API_PORT "$ENV_FILE")" != 443 ]] || { error "Port 443 is occupied by the node API"; false; }
     reserved=(
         "$(env_get API_PORT "$ENV_FILE")"

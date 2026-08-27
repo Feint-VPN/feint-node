@@ -35,6 +35,7 @@ The script handles everything with **zero prompts**:
 | `--dir`      | `/opt/vpn-node` | Install directory            |
 | `--sub`      | `true`          | Enable subscription endpoint |
 | `--branch`   | `main`          | Git branch to clone          |
+| `--template` | `default`       | `default`, `vless`, or `hysteria2` |
 
 When it finishes you'll see the API URL, all ports, and the Hiddify subscription URL.
 
@@ -58,6 +59,9 @@ The updater preserves `.env.local` and existing users, applies the latest
 sing-box template, validates it, pulls the published images, and waits for the
 authenticated `/status` readiness check. A failed rollout restores the previous
 commit, images and runtime configuration.
+
+For a VLESS-only Vision REALITY node, install with `--template vless`. It uses
+TCP `38519` and `vkvideo.ru:443` as the REALITY handshake target.
 
 ---
 

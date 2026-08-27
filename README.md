@@ -113,6 +113,10 @@ automatically.
 Before starting containers, it renders `templates/sing-box.json.tpl` with the
 generated ports and secrets and validates the result with `sing-box check`.
 
+`--template vless` installs only VLESS Vision REALITY on TCP `38519`, using
+`vkvideo.ru:443` as the REALITY handshake target. Every installation generates
+its own REALITY key pair and short ID.
+
 ### Installer options
 
 | Option | Default | Meaning |
@@ -124,6 +128,7 @@ generated ports and secrets and validates the result with `sing-box check`.
 | `--dir` | `/opt/vpn-node` | Installation directory. |
 | `--sub` | `true` | Enable the node subscription endpoint. |
 | `--branch` | `main` | Repository branch installed on the server. |
+| `--template` | `default` | Runtime profile: `default`, `vless`, or `hysteria2`. |
 | `--new-ssh-port` | random | Use this fixed SSH port and skip interactive confirmation for SDK installation. |
 | `--ssh-public-key` | existing key | Public key installed before password SSH is disabled. Required with `--new-ssh-port`. |
 
