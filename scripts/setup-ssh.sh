@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Lock the host to Feint ports and move SSH to a verified non-default port.
+# Move SSH to a verified non-default port without managing the host firewall.
 set -Eeuo pipefail
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
@@ -52,7 +52,6 @@ command -v sshd >/dev/null || die "sshd is required"
 command -v systemctl >/dev/null || die "systemd is required"
 
 source "$INSTALL_DIR/scripts/lib/ports.sh"
-source "$INSTALL_DIR/scripts/lib/firewall.sh"
 port_check_tool_available || die "Port checks require iproute2 (ss)"
 port_require_unique_config "$ENV_FILE" || exit 1
 
@@ -62,8 +61,6 @@ VMESS_PORT="$(env_get VMESS_PORT "$ENV_FILE")"
 TROJAN_PORT="$(env_get TROJAN_PORT "$ENV_FILE")"
 HYSTERIA2_PORT="$(env_get HYSTERIA2_PORT "$ENV_FILE")"
 SHADOWSOCKS_PORT="$(env_get SHADOWSOCKS_PORT "$ENV_FILE")"
-command -v docker >/dev/null || die "Docker is required"
-docker inspect vpn-node-api >/dev/null 2>&1 || die "vpn-node-api must be running before firewall setup"
 ssh_connection="${SSH_CONNECTION:-}"
 OLD_SSH_PORT="${ssh_connection##* }"
 if ! port_validate "$OLD_SSH_PORT"; then
@@ -85,17 +82,6 @@ else
     port_require_available tcp "$NEW_SSH_PORT" "SSH port" || exit 1
 fi
 
-if ! command -v ufw >/dev/null; then
-    info "Installing UFW"
-    apt-get update
-    apt-get install -y --no-install-recommends ufw
-fi
-if grep -q '^IPV6=' /etc/default/ufw; then
-    sed -i 's/^IPV6=.*/IPV6=yes/' /etc/default/ufw
-else
-    printf 'IPV6=yes\n' >> /etc/default/ufw
-fi
-
 SSH_DROPIN=/etc/ssh/sshd_config.d/00-feint-port.conf
 SSH_BACKUP_DIR=/etc/ssh/feint-backups
 SSH_BACKUP="$SSH_BACKUP_DIR/sshd-$(date -u '+%Y%m%d-%H%M%S').tar"
@@ -107,7 +93,6 @@ else
 fi
 
 SSH_CHANGED=false
-FIREWALL_CHANGED=false
 
 restart_ssh() {
     systemctl daemon-reload
@@ -131,9 +116,8 @@ rollback() {
     (( status != 0 )) || status=1
     trap - ERR INT TERM HUP
     set +e
-    error "Firewall setup failed; restoring SSH on port $OLD_SSH_PORT"
+    error "SSH setup failed; restoring port $OLD_SSH_PORT"
     [[ "$SSH_CHANGED" == false ]] || restore_ssh
-    [[ "$FIREWALL_CHANGED" == false ]] || firewall_apply "$ENV_FILE" "$OLD_SSH_PORT"
     restart_ssh
     exit "$status"
 }
@@ -174,9 +158,10 @@ sshd_setting passwordauthentication PASSWORD_AUTHENTICATION \
     || die "Could not read the effective password authentication setting"
 [[ "$PASSWORD_AUTHENTICATION" == no ]] || die "Password authentication is still enabled"
 
-info "Closing host ports outside the Feint allowlist"
-FIREWALL_CHANGED=true
-firewall_apply "$ENV_FILE" "$NEW_SSH_PORT" "$OLD_SSH_PORT"
+if command -v ufw >/dev/null 2>&1 && ufw status | grep -q '^Status: active'; then
+    info "Disabling UFW; Feint does not manage the host firewall"
+    ufw --force disable >/dev/null
+fi
 restart_ssh
 
 for _ in {1..10}; do
@@ -200,11 +185,8 @@ if [[ "$NO_CONFIRM" == false ]]; then
     fi
 fi
 
-ufw --force delete allow "$OLD_SSH_PORT/tcp" >/dev/null
 trap - ERR INT TERM HUP
 
 success "SSH moved to $NEW_SSH_PORT"
-success "All non-Feint host ports are closed"
-ufw status verbose
 echo
 warn "SSH backup: $SSH_BACKUP"

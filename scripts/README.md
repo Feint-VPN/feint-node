@@ -27,12 +27,7 @@ deployment unchanged. With `--apply`, it recreates the API container, updates
 the persisted sing-box configuration, restarts sing-box, checks `/status`, and
 restores the previous env and sing-box configuration if any step fails.
 
-After every port change, update firewall rules and distribute fresh client
-configuration to users:
-
-```bash
-sudo ./scripts/setup-firewall.sh
-```
+After every port change, distribute fresh client configuration to users.
 
 ## Installation
 
@@ -65,18 +60,19 @@ listener; it does not interrupt the existing service. Free port 80 or use a
 different certificate arrangement before installing. Webroot and DNS ACME
 modes are not implemented yet.
 
-## Firewall
+## SSH
 
-Run the firewall setup only after `.env.local` contains the intended port plan:
+The installer always moves SSH to a checked non-default port, installs the
+provided public key and disables password authentication. To run the same flow
+manually:
 
 ```bash
-sudo ./scripts/setup-firewall.sh
+sudo ./scripts/setup-ssh.sh
 ```
 
-It replaces host firewall rules with the Feint allowlist and requires moving
-SSH to a new free port. Manual use confirms a second session. SDK installation
-passes an explicit port and uses the non-interactive mode. See the
-[firewall guide](FIREWALL_SETUP.md) for the exact flows and recovery steps.
+Manual use confirms a second SSH session. SDK installation passes an explicit
+port and uses the non-interactive mode. Feint disables active UFW during SSH
+setup and does not manage host firewall rules afterwards.
 
 ## Updates
 
@@ -112,8 +108,9 @@ sudo bash scripts/diagnose.sh --logs 50
 ```
 
 The command checks configuration, containers, authenticated `/status`, the
-persisted sing-box config, listeners, SSH and UFW. Logs are opt-in, capped at
-100 lines, and configured secrets are redacted.
+persisted sing-box config, listeners and SSH. It reports firewall state without
+changing it. Logs are opt-in, capped at 100 lines, and configured secrets are
+redacted.
 
 ## Endpoint hiding
 
@@ -135,7 +132,6 @@ Leave the current owner running and choose another port:
 
 ```bash
 bash scripts/ports.sh set --vless 28473 --apply
-sudo ./scripts/setup-firewall.sh
 ```
 
 ### Certificate issuance fails

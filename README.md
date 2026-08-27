@@ -360,7 +360,8 @@ Apply selected ports atomically:
 bash scripts/ports.sh set --api 8337 --vless 28473 --apply
 ```
 
-When UFW is active, `--apply` synchronizes its allowlist automatically.
+Feint does not manage host firewall rules. Port changes only update the node
+deployment.
 
 Without `--apply`, the command only previews a validated port plan. `--apply`
 updates `.env.local`, validates conflicts and duplicates, updates the
@@ -462,7 +463,6 @@ Additional operational references:
 
 - [Deployment scripts](scripts/README.md)
 - [Practical example](scripts/USAGE_EXAMPLE.md)
-- [Firewall guide](scripts/FIREWALL_SETUP.md)
 - [Quick start](QUICK_START.md)
 
 ## 🔭 Project structure
@@ -479,7 +479,7 @@ feint-node/
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   └── requirements-dev.txt
-├── scripts/              # Ports, firewall and deployment helpers
+├── scripts/              # SSH, ports and deployment helpers
 ├── sing-box/             # Runtime image assets
 ├── templates/            # Versioned sing-box configuration template
 ├── docker-compose.yml
@@ -508,7 +508,7 @@ The current contract is checked on Windows and Linux:
 - unit, integration and property tests;
 - production Docker image build;
 - runtime import without development dependencies;
-- port, installer, updater and firewall regression tests.
+- port, installer and updater regression tests.
 
 Current suite: **179 passing, 1 skipped**.
 

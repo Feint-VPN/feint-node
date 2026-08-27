@@ -137,14 +137,14 @@ fi
 if command -v ufw >/dev/null 2>&1; then
     ufw_status="$(ufw status 2>/dev/null | sed -n '1p')"
     if [[ "$ufw_status" == 'Status: active' ]]; then
-        ok "$ufw_status"
+        warn "$ufw_status (Feint does not manage host firewall rules)"
     elif [[ -n "$ufw_status" ]]; then
-        fail "$ufw_status"
+        ok "$ufw_status"
     else
-        fail 'Could not read UFW status; try sudo'
+        warn 'Could not read UFW status; try sudo'
     fi
 else
-    fail 'UFW is not installed'
+    ok 'UFW is not installed (host firewall unmanaged)'
 fi
 
 if (( LOG_LINES > 0 )); then

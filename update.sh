@@ -81,18 +81,11 @@ restore_image() {
 
 rollback() {
     local status=$?
-    local ssh_port
     trap - ERR
     set +e
     error "Update failed; restoring the previous deployment"
     git reset --hard "$OLD_COMMIT"
     cp "$ENV_BACKUP" "$ENV_FILE"
-    source "$INSTALL_DIR/scripts/lib/firewall.sh"
-    if sshd_setting port ssh_port && port_validate "$ssh_port"; then
-        firewall_apply "$ENV_FILE" "$ssh_port"
-    else
-        error "Rollback could not determine the SSH port"
-    fi
     restore_image "$OLD_NODE_IMAGE" "$NODE_IMAGE"
     restore_image "$OLD_RUNTIME_IMAGE" "$VPN_RUNTIME_IMAGE"
     restore_image "$OLD_CERTBOT_IMAGE" "$CERTBOT_IMAGE"
@@ -267,14 +260,6 @@ sync_template
 
 info "Waiting for node readiness"
 wait_for_status
-
-source "$INSTALL_DIR/scripts/lib/firewall.sh"
-if ! sshd_setting port SSH_PORT; then
-    error "Could not determine the SSH port"
-    false
-fi
-port_validate "$SSH_PORT" || die "Invalid SSH port: $SSH_PORT"
-firewall_apply "$ENV_FILE" "$SSH_PORT"
 
 trap - ERR
 rm -f "$ENV_BACKUP" "$CONFIG_BACKUP"

@@ -579,15 +579,15 @@ else
     warn "Could not install iptables-persistent — MTU clamp will not persist across reboot."
 fi
 
-header "Secure host"
-FIREWALL_ARGS=(--dir "$INSTALL_DIR")
+header "Secure SSH"
+SSH_ARGS=(--dir "$INSTALL_DIR")
 if [[ -n "$NEW_SSH_PORT" ]]; then
     [[ -n "$SSH_PUBLIC_KEY" ]] || die "--new-ssh-port requires --ssh-public-key"
-    FIREWALL_ARGS+=(--ssh-port "$NEW_SSH_PORT" --ssh-public-key "$SSH_PUBLIC_KEY" --no-confirm)
+    SSH_ARGS+=(--ssh-port "$NEW_SSH_PORT" --ssh-public-key "$SSH_PUBLIC_KEY" --no-confirm)
 fi
-bash "$INSTALL_DIR/scripts/setup-firewall.sh" "${FIREWALL_ARGS[@]}"
+bash "$INSTALL_DIR/scripts/setup-ssh.sh" "${SSH_ARGS[@]}"
 wait_for_status "$STATUS_URL" \
-    || die "Host was secured, but the complete node status is not healthy"
+    || die "SSH was secured, but the complete node status is not healthy"
 success "API status is healthy"
 
 # ── summary ───────────────────────────────────────────────────────────────────
