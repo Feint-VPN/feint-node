@@ -55,7 +55,7 @@ source "$INSTALL_DIR/scripts/lib/ports.sh"
 
 sshd_setting() {
     local value
-    value="$(sshd -T | awk -v key="$1" '$1 == key { print $2; exit }')" || return 1
+    value="$(sshd -T | awk -v key="$1" '$1 == key && !found { print $2; found=1 }')" || return 1
     [[ -n "$value" ]] || return 1
     printf -v "$2" '%s' "$value"
 }
