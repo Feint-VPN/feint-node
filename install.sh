@@ -113,7 +113,7 @@ if [[ -f "$INSTALL_DIR/.env.local" ]]; then
 fi
 
 # ── banner ────────────────────────────────────────────────────────────────────
-if [[ -t 1 && -n "${TERM:-}" ]]; then
+if [[ -t 1 && -n "${TERM:-}" && "$TERM" != dumb ]]; then
     clear
 fi
 echo -e "${BOLD}${CYAN}"
