@@ -100,9 +100,9 @@ bash install.sh \
   --runtime xray
 ```
 
-`sing-box` remains the default. Xray mode keeps the same user, outbound,
-subscription, status and traffic-statistics API contract. Its public inbound
-currently uses only the `vless` template; Hysteria2 outbounds remain available.
+`sing-box` remains the default. Xray mode is intentionally limited to a
+standalone VLESS Reality node. It keeps the user, subscription, status and
+traffic-statistics API contract, but rejects cascade outbounds.
 
 The installer prepares Docker, validates ports, obtains the TLS certificate,
 generates secrets and starts the node:
@@ -383,7 +383,6 @@ Runtime values live in `.env.local`. Start from [`.env.example`](.env.example).
 | `NODE_IMAGE` | `ghcr.io/feint-vpn/feint-node:latest` | Published node API image. |
 | `SINGBOX_IMAGE` | `ghcr.io/feint-vpn/feint-sing-box:v1.13.19-feint.1` | Feint sing-box runtime image. |
 | `XRAY_IMAGE` | `ghcr.io/xtls/xray-core:26.7.28` | Official Xray runtime image. |
-| `XRAY_MIN_CLIENT_VERSION` | `1.8.0` | Lowest REALITY client version accepted in Xray mode. |
 | `VPN_RUNTIME` | `sing-box` | Selected VPN core: `sing-box` or `xray`. |
 | `VLESS_PORT` | `443` | VLESS Vision REALITY listener. |
 | `REALITY_PRIVATE_KEY` | generated | Server-only REALITY private key. |

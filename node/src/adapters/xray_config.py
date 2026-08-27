@@ -8,52 +8,6 @@ from pathlib import Path
 from domain.models import SingBoxConfig
 
 
-def _outbound(value: dict) -> dict:
-    if value["type"] == "direct":
-        return {"protocol": "freedom", "tag": value["tag"]}
-    if value["type"] == "block":
-        return {"protocol": "blackhole", "tag": value["tag"]}
-    if value["type"] != "hysteria2":
-        raise ValueError(f"Xray runtime does not support outbound {value['type']}")
-
-    stream = {
-        "method": "hysteria",
-        "security": "tls",
-        "hysteriaSettings": {"version": 2, "auth": value["password"]},
-        "tlsSettings": {
-            "serverName": value["tls"]["server_name"],
-            "allowInsecure": value["tls"].get("insecure", False),
-        },
-    }
-    if obfs := value.get("obfs"):
-        stream["finalmask"] = {
-            "udp": [
-                {
-                    "type": obfs["type"],
-                    "settings": {"password": obfs["password"]},
-                }
-            ]
-        }
-    if value.get("up_mbps") or value.get("down_mbps"):
-        limits = {}
-        if value.get("up_mbps"):
-            limits["brutalUp"] = f"{value['up_mbps']} mbps"
-        if value.get("down_mbps"):
-            limits["brutalDown"] = f"{value['down_mbps']} mbps"
-        stream.setdefault("finalmask", {})["quicParams"] = limits
-
-    return {
-        "protocol": "hysteria",
-        "tag": value["tag"],
-        "settings": {
-            "version": 2,
-            "address": value["server"],
-            "port": value["server_port"],
-        },
-        "streamSettings": stream,
-    }
-
-
 def render_xray_config(source: str, destination: str) -> None:
     config = SingBoxConfig.model_validate_json(Path(source).read_text(encoding="utf-8"))
     inbound = next(
@@ -61,6 +15,8 @@ def render_xray_config(source: str, destination: str) -> None:
     )
     if inbound is None or inbound.tls is None or inbound.tls.reality is None:
         raise ValueError("Xray runtime requires a VLESS REALITY inbound")
+    if any(item.tag.startswith("outbound:") for item in config.outbounds):
+        raise ValueError("Xray runtime supports standalone VLESS only")
 
     reality = inbound.tls.reality
     handshake = reality.get("handshake") or {}
@@ -113,14 +69,14 @@ def render_xray_config(source: str, destination: str) -> None:
                         "serverNames": [server_name],
                         "privateKey": private_key,
                         "shortIds": short_ids,
-                        "minClientVer": os.getenv(
-                            "XRAY_MIN_CLIENT_VERSION", "1.8.0"
-                        ),
                     },
                 },
             }
         ],
-        "outbounds": [_outbound(item.model_dump()) for item in config.outbounds],
+        "outbounds": [
+            {"protocol": "freedom", "tag": "direct"},
+            {"protocol": "blackhole", "tag": "block"},
+        ],
         "routing": {
             "domainStrategy": "IPIfNonMatch",
             "rules": [
@@ -129,11 +85,6 @@ def render_xray_config(source: str, destination: str) -> None:
                     "ip": ["geoip:private", "geoip:ru"],
                     "outboundTag": "block",
                 }
-            ]
-            + [
-                {"type": "field", "user": rule.auth_user, "outboundTag": rule.outbound}
-                for rule in config.route.rules
-                if rule.auth_user and rule.outbound
             ],
         },
     }
