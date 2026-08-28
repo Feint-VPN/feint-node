@@ -83,11 +83,12 @@ if [[ -z "$NEW_SSH_PORT" ]]; then
 else
     port_validate "$NEW_SSH_PORT" \
         || die "SSH port must be between 1 and 65535"
-    [[ "$NEW_SSH_PORT" != "$OLD_SSH_PORT" ]] || die "SSH port must change"
-    for port in "${reserved[@]}"; do
-        [[ "$NEW_SSH_PORT" != "$port" ]] || die "SSH port conflicts with reserved port $port"
-    done
-    port_require_available tcp "$NEW_SSH_PORT" "SSH port" || exit 1
+    if [[ "$NEW_SSH_PORT" != "$OLD_SSH_PORT" ]]; then
+        for port in "${reserved[@]}"; do
+            [[ "$NEW_SSH_PORT" != "$port" ]] || die "SSH port conflicts with reserved port $port"
+        done
+        port_require_available tcp "$NEW_SSH_PORT" "SSH port" || exit 1
+    fi
 fi
 
 SSH_DROPIN=/etc/ssh/sshd_config.d/00-feint-port.conf
@@ -128,7 +129,11 @@ rollback() {
 }
 trap rollback ERR INT TERM HUP
 
-info "Moving SSH from $OLD_SSH_PORT to $NEW_SSH_PORT"
+if [[ "$NEW_SSH_PORT" == "$OLD_SSH_PORT" ]]; then
+    info "Securing SSH on port $NEW_SSH_PORT"
+else
+    info "Moving SSH from $OLD_SSH_PORT to $NEW_SSH_PORT"
+fi
 mkdir -p /etc/ssh/sshd_config.d
 mkdir -p /root/.ssh
 chmod 700 /root/.ssh
@@ -192,6 +197,6 @@ fi
 
 trap - ERR INT TERM HUP
 
-success "SSH moved to $NEW_SSH_PORT"
+success "SSH secured on port $NEW_SSH_PORT"
 echo
 warn "SSH backup: $SSH_BACKUP"

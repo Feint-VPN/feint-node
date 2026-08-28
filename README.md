@@ -144,7 +144,7 @@ its own REALITY key pair and short ID.
 | `--branch` | `main` | Repository branch installed on the server. |
 | `--template` | `default` | Runtime profile: `default`, `vless`, or `hysteria2`. |
 | `--runtime` | `sing-box` | VPN core: `sing-box` or `xray`. |
-| `--new-ssh-port` | random | Use this fixed SSH port and skip interactive confirmation for SDK installation. |
+| `--new-ssh-port` | random | Use this fixed SSH port and skip interactive confirmation for SDK installation. May match the current SSH port to harden it in place. |
 | `--ssh-public-key` | existing key | Public key installed before password SSH is disabled. Required with `--new-ssh-port`. |
 
 For a non-interactive SDK installation, provide the SSH port that the SDK will
