@@ -309,7 +309,13 @@ if [[ "$NODE_TEMPLATE" != hysteria2 ]]; then
 fi
 VMESS_PORT=$(port_find_free_unique tcp 10000 60000 "$API_PORT" "$VLESS_PORT") || die "Could not find a free VMess TCP port"
 TROJAN_PORT=$(port_find_free_unique tcp 10000 60000 "$API_PORT" "$VLESS_PORT" "$VMESS_PORT") || die "Could not find a free Trojan TCP port"
-HY2_PORT=$(port_find_free_unique udp 10000 60000) || die "Could not find a free Hysteria2 UDP port"
+if [[ "$VPN_RUNTIME" == xray && "$NODE_TEMPLATE" == vless ]]; then
+    HY2_PORT=443
+    port_require_available udp "$HY2_PORT" "Hysteria2" \
+        || die "Port ${HY2_PORT}/UDP is required for Hysteria2"
+else
+    HY2_PORT=$(port_find_free_unique udp 10000 60000) || die "Could not find a free Hysteria2 UDP port"
+fi
 SS_PORT=$(port_find_free_both 10000 60000 "$API_PORT" "$VLESS_PORT" "$VMESS_PORT" "$TROJAN_PORT" "$HY2_PORT") || die "Could not find a free Shadowsocks TCP/UDP port"
 
 # Detect public IP

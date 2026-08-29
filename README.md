@@ -127,9 +127,11 @@ automatically.
 Before starting containers, it renders the selected canonical template and
 validates the resulting sing-box or Xray configuration with the selected core.
 
-`--template vless` installs only VLESS Vision REALITY on TCP `38519`, using
-`vkvideo.ru:443` as the REALITY handshake target. Every installation generates
-its own REALITY key pair and short ID.
+With the Xray runtime, `--template vless` installs VLESS Vision REALITY on TCP
+`38519` and Hysteria2 on UDP `443`. The VLESS handshake target is
+`vkvideo.ru:443`. Every installation generates its own REALITY key pair and
+short ID. A web server may independently use TCP `443`, but its HTTP/3 listener
+must remain disabled because HTTP/3 also requires UDP `443`.
 
 ### Installer options
 
@@ -392,7 +394,7 @@ Runtime values live in `.env.local`. Start from [`.env.example`](.env.example).
 | `REALITY_SERVER_NAME` | `google.com` | TLS handshake camouflage name. |
 | `VMESS_PORT` | configurable | VMess WebSocket listener. |
 | `TROJAN_PORT` | configurable | Trojan listener. |
-| `HYSTERIA2_PORT` | configurable | Hysteria2 UDP listener. |
+| `HYSTERIA2_PORT` | `443` on a new Xray node | Hysteria2 UDP listener; existing nodes preserve their configured port. |
 | `SHADOWSOCKS_PORT` | configurable | Shadowsocks listener. |
 | `CONFIG_PATH` | `/opt/sing-box/config.json` | Persisted canonical node configuration. |
 | `XRAY_CONFIG_PATH` | `/opt/sing-box/xray.json` | Generated Xray runtime configuration. |

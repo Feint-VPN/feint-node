@@ -124,21 +124,39 @@ class UserService:
 
         created = []
         for username, requested_uuid, requested_password in users:
-            if any(_user_in(inbound, username) for _, inbound in configured):
-                if skip_existing:
-                    continue
+            existing = [
+                user
+                for _, inbound in configured
+                if (user := _find_user(inbound, username)) is not None
+            ]
+            if existing and not skip_existing:
                 raise UserAlreadyExistsError(f"User '{username}' already exists")
+            missing = [
+                (protocol, inbound)
+                for protocol, inbound in configured
+                if not _user_in(inbound, username)
+            ]
+            if not missing:
+                continue
 
-            uid = requested_uuid or str(_uuid.uuid4())
-            pwd = requested_password or generate_secure_password(32)
-            for protocol, inbound in configured:
+            uid = (
+                requested_uuid
+                or next((user.uuid for user in existing if user.uuid), None)
+                or str(_uuid.uuid4())
+            )
+            pwd = (
+                requested_password
+                or next((user.password for user in existing if user.password), None)
+                or generate_secure_password(32)
+            )
+            for protocol, inbound in missing:
                 inbound.users.append(_adapt_user(username, uid, pwd, protocol))
             created.append(
                 {
                     "username": username,
                     "uuid": uid,
                     "password": pwd,
-                    "protocols": [protocol for protocol, _ in configured],
+                    "protocols": [protocol for protocol, _ in missing],
                     "created_at": datetime.now(tz=UTC),
                 }
             )

@@ -21,6 +21,18 @@
         }
       },
       "multiplex": { "enabled": false }
+    },
+    {
+      "type": "hysteria2",
+      "tag": "hysteria2-in",
+      "listen": "::",
+      "listen_port": {{HYSTERIA2_PORT}},
+      "users": [],
+      "tls": {
+        "enabled": true,
+        "certificate_path": "/etc/letsencrypt/live/{{DOMAIN}}/fullchain.pem",
+        "key_path": "/etc/letsencrypt/live/{{DOMAIN}}/privkey.pem"
+      }
     }
   ],
   "outbounds": [

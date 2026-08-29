@@ -60,8 +60,9 @@ sing-box template, validates it, pulls the published images, and waits for the
 authenticated `/status` readiness check. A failed rollout restores the previous
 commit, images and runtime configuration.
 
-For a VLESS-only Vision REALITY node, install with `--template vless`. It uses
-TCP `38519` and `vkvideo.ru:443` as the REALITY handshake target.
+For the Xray VLESS profile, install with `--runtime xray --template vless`.
+It uses TCP `38519` for VLESS Reality and UDP `443` for Hysteria2, leaving
+TCP `443` available for a web server.
 
 ---
 

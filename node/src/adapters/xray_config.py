@@ -26,6 +26,78 @@ def render_xray_config(source: str, destination: str) -> None:
     if not server_name or not private_key or not short_ids:
         raise ValueError("VLESS REALITY settings are incomplete")
 
+    hysteria = next(
+        (item for item in config.inbounds if item.tag == "hysteria2-in"), None
+    )
+    if hysteria is not None and (
+        hysteria.tls is None
+        or not hysteria.tls.certificate_path
+        or not hysteria.tls.key_path
+    ):
+        raise ValueError("Xray Hysteria2 TLS settings are incomplete")
+
+    inbounds = [
+        {
+            "tag": inbound.tag,
+            "listen": "0.0.0.0",
+            "port": inbound.listen_port,
+            "protocol": "vless",
+            "settings": {
+                "clients": [
+                    {
+                        "id": user.uuid,
+                        "email": user.name,
+                        "flow": user.flow or "xtls-rprx-vision",
+                        "level": 0,
+                    }
+                    for user in inbound.users
+                ],
+                "decryption": "none",
+            },
+            "streamSettings": {
+                "network": "tcp",
+                "security": "reality",
+                "realitySettings": {
+                    "target": f"{handshake.get('server', server_name)}:{handshake.get('server_port', 443)}",
+                    "serverNames": [server_name],
+                    "privateKey": private_key,
+                    "minClientVer": "0.0.0",
+                    "shortIds": short_ids,
+                },
+            },
+        }
+    ]
+    if hysteria is not None:
+        inbounds.append(
+            {
+                "tag": hysteria.tag,
+                "listen": "0.0.0.0",
+                "port": hysteria.listen_port,
+                "protocol": "hysteria",
+                "settings": {
+                    "version": 2,
+                    "clients": [
+                        {"auth": user.password, "email": user.name, "level": 0}
+                        for user in hysteria.users
+                    ],
+                },
+                "streamSettings": {
+                    "network": "hysteria",
+                    "security": "tls",
+                    "tlsSettings": {
+                        "alpn": ["h3"],
+                        "certificates": [
+                            {
+                                "certificateFile": hysteria.tls.certificate_path,
+                                "keyFile": hysteria.tls.key_path,
+                            }
+                        ],
+                    },
+                    "hysteriaSettings": {"version": 2},
+                },
+            }
+        )
+
     xray = {
         "log": {"loglevel": config.log.level},
         "api": {
@@ -43,37 +115,7 @@ def render_xray_config(source: str, destination: str) -> None:
             }
         },
         "stats": {},
-        "inbounds": [
-            {
-                "tag": inbound.tag,
-                "listen": "0.0.0.0",
-                "port": inbound.listen_port,
-                "protocol": "vless",
-                "settings": {
-                    "clients": [
-                        {
-                            "id": user.uuid,
-                            "email": user.name,
-                            "flow": user.flow or "xtls-rprx-vision",
-                            "level": 0,
-                        }
-                        for user in inbound.users
-                    ],
-                    "decryption": "none",
-                },
-                "streamSettings": {
-                    "network": "tcp",
-                    "security": "reality",
-                    "realitySettings": {
-                        "target": f"{handshake.get('server', server_name)}:{handshake.get('server_port', 443)}",
-                        "serverNames": [server_name],
-                        "privateKey": private_key,
-                        "minClientVer": "0.0.0",
-                        "shortIds": short_ids,
-                    },
-                },
-            }
-        ],
+        "inbounds": inbounds,
         "outbounds": [
             {"protocol": "freedom", "tag": "direct"},
             {"protocol": "blackhole", "tag": "block"},
