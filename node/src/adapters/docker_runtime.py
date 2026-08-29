@@ -3,6 +3,7 @@
 import asyncio
 
 import docker
+from adapters.xray_config import render_xray_config
 from docker.errors import DockerException, NotFound
 from domain.errors import SingBoxReloadError
 from domain.ports import IContainerRuntime
@@ -15,7 +16,7 @@ class NoopRuntime(IContainerRuntime):
     """No-op runtime for dev/test — skips container restart."""
 
     async def reload(self) -> None:
-        logger.info("DEV_MODE: skipping sing-box container reload")
+        logger.info("DEV_MODE: skipping VPN runtime reload")
 
     async def is_running(self) -> bool:
         return True
@@ -71,3 +72,38 @@ class DockerRuntime(IContainerRuntime):
             return container.status == "running"
         except (DockerException, NotFound):
             return False
+
+
+class XrayDockerRuntime(DockerRuntime):
+    def __init__(
+        self,
+        config_path: str,
+        xray_config_path: str,
+        runtime_config_path: str | None = None,
+        container_name: str = "xray",
+        timeout: int = 30,
+        client=None,
+    ) -> None:
+        super().__init__(container_name, timeout, client)
+        self.config_path = config_path
+        self.xray_config_path = xray_config_path
+        self.runtime_config_path = runtime_config_path or xray_config_path
+
+    async def reload(self) -> None:
+        await asyncio.to_thread(
+            render_xray_config, self.config_path, self.xray_config_path
+        )
+        try:
+            container = await asyncio.to_thread(
+                self._client.containers.get, self.container_name
+            )
+            result = await asyncio.to_thread(
+                container.exec_run,
+                ["xray", "run", "-test", "-config", self.runtime_config_path],
+            )
+        except (DockerException, NotFound) as error:
+            raise SingBoxReloadError(str(error)) from error
+        if result.exit_code:
+            output = result.output.decode(errors="replace").strip()
+            raise SingBoxReloadError(output or "Generated Xray config is invalid")
+        await super().reload()

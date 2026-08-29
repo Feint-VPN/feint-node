@@ -78,7 +78,7 @@ Creating or deleting a user follows one transaction-like flow:
 
 | Protocol | Runtime tag | User credential |
 | --- | --- | --- |
-| VLESS Vision TLS | `vless-reality-in` | UUID |
+| VLESS Vision REALITY | `vless-reality-in` | UUID |
 | VMess WebSocket | `vmess-ws-in` | UUID |
 | Trojan | `trojan-in` | Password |
 | Hysteria2 | `hysteria2-in` | Password |
@@ -89,6 +89,20 @@ by runtime telemetry are intentionally strings because sing-box capabilities
 may change independently of the node API.
 
 ## 🌙 Installation
+
+Use the native Xray-core runtime for a VLESS Reality-only node:
+
+```bash
+bash install.sh \
+  --domain vpn.example.com \
+  --email admin@example.com \
+  --template vless \
+  --runtime xray
+```
+
+`sing-box` remains the default. Xray mode is intentionally limited to a
+standalone VLESS Reality node. It keeps the user, subscription, status and
+traffic-statistics API contract, but rejects cascade outbounds.
 
 The installer prepares Docker, validates ports, obtains the TLS certificate,
 generates secrets and starts the node:
@@ -110,8 +124,14 @@ Requirements:
 The installer checks occupied and duplicated ports before changing the server.
 It reports the owning process and never terminates another service
 automatically.
-Before starting containers, it renders `templates/sing-box.json.tpl` with the
-generated ports and secrets and validates the result with `sing-box check`.
+Before starting containers, it renders the selected canonical template and
+validates the resulting sing-box or Xray configuration with the selected core.
+
+With the Xray runtime, `--template vless` installs VLESS Vision REALITY on TCP
+`38519` and Hysteria2 on UDP `443`. The VLESS handshake target is
+`vkvideo.ru:443`. Every installation generates its own REALITY key pair and
+short ID. A web server may independently use TCP `443`, but its HTTP/3 listener
+must remain disabled because HTTP/3 also requires UDP `443`.
 
 ### Installer options
 
@@ -124,7 +144,9 @@ generated ports and secrets and validates the result with `sing-box check`.
 | `--dir` | `/opt/vpn-node` | Installation directory. |
 | `--sub` | `true` | Enable the node subscription endpoint. |
 | `--branch` | `main` | Repository branch installed on the server. |
-| `--new-ssh-port` | random | Use this fixed SSH port and skip interactive confirmation for SDK installation. |
+| `--template` | `default` | Runtime profile: `default`, `vless`, or `hysteria2`. |
+| `--runtime` | `sing-box` | VPN core: `sing-box` or `xray`. |
+| `--new-ssh-port` | random | Use this fixed SSH port and skip interactive confirmation for SDK installation. May match the current SSH port to harden it in place. |
 | `--ssh-public-key` | existing key | Public key installed before password SSH is disabled. Required with `--new-ssh-port`. |
 
 For a non-interactive SDK installation, provide the SSH port that the SDK will
@@ -135,7 +157,7 @@ curl -fsSL https://raw.githubusercontent.com/Feint-VPN/feint-node/main/install.s
   sudo bash -s -- \
   --domain vpn.example.com \
   --email admin@example.com \
-  --new-ssh-port 41035 \
+  --new-ssh-port 220 \
   --ssh-public-key "$(cat ~/.ssh/id_ed25519.pub)"
 ```
 
@@ -194,7 +216,7 @@ Example response:
 ```json
 {
   "status": "ok",
-  "api_version": "2.1",
+  "api_version": "2.3",
   "uptime": "02d 07h",
   "configuration": "available",
   "sing_box": "running",
@@ -216,6 +238,7 @@ part without additional probes.
 | Method | Path | Result |
 | --- | --- | --- |
 | `POST` | `/user` | Create one user across all protocol inbounds. |
+| `POST` | `/users` | Idempotently create up to 500 users in one config mutation. |
 | `GET` | `/user/{username}` | Read one local user. |
 | `GET` | `/users?limit=50&skip=0` | Read a paginated local user list. |
 | `DELETE` | `/user/{username}` | Remove the user from every inbound. |
@@ -223,6 +246,26 @@ part without additional probes.
 
 Usernames contain `3-50` ASCII letters, digits, `_` or `-`. A UUID and password
 may be supplied in the request; otherwise the node generates them.
+
+Bulk creation accepts `{"users": [...]}` with the same user objects as
+`POST /user`. Existing usernames are skipped, so a maintainer can safely retry
+the complete batch. One request saves the resulting configuration and reloads
+sing-box at most once; an unchanged batch does neither.
+
+### Outbounds
+
+| Method | Path | Result |
+| --- | --- | --- |
+| `PUT` | `/outbound/{outbound_id}` | Creates or replaces one managed outbound. |
+| `DELETE` | `/outbound/{outbound_id}` | Removes an unused managed outbound. |
+| `PUT` | `/outbound/{outbound_id}/user/{user_id}` | Idempotently routes one existing user. |
+| `POST` | `/outbound/{outbound_id}/users` | Idempotently routes up to 500 existing users. |
+| `DELETE` | `/outbound/{outbound_id}/user/{user_id}` | Removes one user from the outbound. |
+| `DELETE` | `/outbound/{outbound_id}/users` | Removes up to 500 users from the outbound. |
+
+Bulk outbound access mutates one route rule and reloads sing-box at most once.
+Every supplied user must already exist on the node. Repeating an unchanged
+request performs no save or reload.
 
 ### Statistics
 
@@ -251,6 +294,15 @@ curl -X POST https://vpn.example.com:8337/user \
 ```
 
 The response contains the generated UUID, password and installed protocols.
+
+Provision a batch:
+
+```bash
+curl -X POST https://vpn.example.com:8337/users \
+  -H "X-API-Secret: $API_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"users":[{"username":"first"},{"username":"second"}]}'
+```
 
 Delete a user:
 
@@ -310,7 +362,8 @@ Apply selected ports atomically:
 bash scripts/ports.sh set --api 8337 --vless 28473 --apply
 ```
 
-When UFW is active, `--apply` synchronizes its allowlist automatically.
+Feint does not manage host firewall rules. Port changes only update the node
+deployment.
 
 Without `--apply`, the command only previews a validated port plan. `--apply`
 updates `.env.local`, validates conflicts and duplicates, updates the
@@ -331,13 +384,20 @@ Runtime values live in `.env.local`. Start from [`.env.example`](.env.example).
 | `SUBSCRIPTION_ENABLED` | `false` | Enable `/sub/{username}`. |
 | `SUB_URI_TEMPLATE` | `🌌 Feint \| {Protocol}` | Display label for generated URIs. |
 | `NODE_IMAGE` | `ghcr.io/feint-vpn/feint-node:latest` | Published node API image. |
-| `SINGBOX_IMAGE` | `ghcr.io/feint-vpn/feint-sing-box:v1.13.12-feint.1` | Feint sing-box runtime image. |
-| `VLESS_PORT` | configurable | VLESS Vision TLS listener. |
+| `SINGBOX_IMAGE` | `ghcr.io/feint-vpn/feint-sing-box:v1.13.19-feint.1` | Feint sing-box runtime image. |
+| `XRAY_IMAGE` | `ghcr.io/xtls/xray-core:26.7.28` | Official Xray runtime image. |
+| `VPN_RUNTIME` | `sing-box` | Selected VPN core: `sing-box` or `xray`. |
+| `VLESS_PORT` | `443` | VLESS Vision REALITY listener. |
+| `REALITY_PRIVATE_KEY` | generated | Server-only REALITY private key. |
+| `REALITY_PUBLIC_KEY` | generated | Public key included in VLESS share URLs. |
+| `REALITY_SHORT_ID` | generated | Per-node REALITY short ID. |
+| `REALITY_SERVER_NAME` | `google.com` | TLS handshake camouflage name. |
 | `VMESS_PORT` | configurable | VMess WebSocket listener. |
 | `TROJAN_PORT` | configurable | Trojan listener. |
-| `HYSTERIA2_PORT` | configurable | Hysteria2 UDP listener. |
+| `HYSTERIA2_PORT` | `443` on a new Xray node | Hysteria2 UDP listener; existing nodes preserve their configured port. |
 | `SHADOWSOCKS_PORT` | configurable | Shadowsocks listener. |
-| `CONFIG_PATH` | `/opt/sing-box/config.json` | Persisted sing-box configuration. |
+| `CONFIG_PATH` | `/opt/sing-box/config.json` | Persisted canonical node configuration. |
+| `XRAY_CONFIG_PATH` | `/opt/sing-box/xray.json` | Generated Xray runtime configuration. |
 | `BACKUP_DIR` | `/opt/sing-box/backups` | Atomic rollback backups. |
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | Container control socket. |
 | `SINGBOX_CONTAINER_NAME` | `sing-box` | Managed runtime container. |
@@ -388,7 +448,7 @@ docker compose --env-file .env.local logs -f vpn-node-api sing-box
 docker compose --env-file .env.local restart vpn-node-api
 ```
 
-During a planned sing-box stop or restart, `v1.13.12` may log
+During a planned sing-box stop or restart, `v1.13.19` may log
 `sing-box did not closed properly: close v2ray server: ... use of closed network connection`.
 This is a harmless upstream double-close message when the container exits with code `0`,
 starts again and the node health check remains healthy. Investigate it only when shutdown
@@ -405,7 +465,6 @@ Additional operational references:
 
 - [Deployment scripts](scripts/README.md)
 - [Practical example](scripts/USAGE_EXAMPLE.md)
-- [Firewall guide](scripts/FIREWALL_SETUP.md)
 - [Quick start](QUICK_START.md)
 
 ## 🔭 Project structure
@@ -422,7 +481,7 @@ feint-node/
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   └── requirements-dev.txt
-├── scripts/              # Ports, firewall and deployment helpers
+├── scripts/              # SSH, ports and deployment helpers
 ├── sing-box/             # Runtime image assets
 ├── templates/            # Versioned sing-box configuration template
 ├── docker-compose.yml
@@ -451,7 +510,7 @@ The current contract is checked on Windows and Linux:
 - unit, integration and property tests;
 - production Docker image build;
 - runtime import without development dependencies;
-- port, installer, updater and firewall regression tests.
+- port, installer and updater regression tests.
 
 Current suite: **179 passing, 1 skipped**.
 

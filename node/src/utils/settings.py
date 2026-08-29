@@ -19,6 +19,10 @@ class Settings:
         # Config Paths
         self.CONFIG_PATH: str = os.getenv("CONFIG_PATH", "/opt/sing-box/config.json")
         self.BACKUP_DIR: str = os.getenv("BACKUP_DIR", "/opt/sing-box/backups")
+        self.VPN_RUNTIME: str = os.getenv("VPN_RUNTIME", "sing-box")
+        self.XRAY_CONFIG_PATH: str = os.getenv(
+            "XRAY_CONFIG_PATH", "/opt/sing-box/xray.json"
+        )
 
         # Docker Settings
         self.DOCKER_SOCKET: str = os.getenv("DOCKER_SOCKET", "/var/run/docker.sock")
@@ -44,6 +48,11 @@ class Settings:
         self.SHADOWSOCKS_METHOD: str = os.getenv(
             "SHADOWSOCKS_METHOD", "2022-blake3-aes-256-gcm"
         )
+
+        # VLESS REALITY client parameters. The private key stays in sing-box.
+        self.REALITY_PUBLIC_KEY: str = os.getenv("REALITY_PUBLIC_KEY", "")
+        self.REALITY_SHORT_ID: str = os.getenv("REALITY_SHORT_ID", "")
+        self.REALITY_SERVER_NAME: str = os.getenv("REALITY_SERVER_NAME", "google.com")
 
         # Paths
         self.ENV_FILE_PATH: Path = Path(

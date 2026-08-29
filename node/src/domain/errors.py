@@ -19,3 +19,15 @@ class ConfigRollbackError(Exception):
 
 class SingBoxReloadError(Exception):
     pass
+
+
+class OutboundNotFoundError(Exception):
+    pass
+
+
+class OutboundInUseError(Exception):
+    pass
+
+
+class OutboundUserNotFoundError(Exception):
+    pass

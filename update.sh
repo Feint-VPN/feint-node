@@ -49,6 +49,8 @@ ENV_FILE="$INSTALL_DIR/.env.local"
 source "$INSTALL_DIR/scripts/lib/ports.sh"
 COMPOSE=(docker compose --env-file "$ENV_FILE" -f "$INSTALL_DIR/docker-compose.yml")
 CONFIG_PATH="$(env_get CONFIG_PATH "$ENV_FILE" /opt/sing-box/config.json)"
+VPN_RUNTIME="$(env_get VPN_RUNTIME "$ENV_FILE" sing-box)"
+XRAY_CONFIG_PATH="$(env_get XRAY_CONFIG_PATH "$ENV_FILE" /opt/sing-box/xray.json)"
 
 detect_branch() {
     git symbolic-ref --quiet --short HEAD 2>/dev/null \
@@ -85,12 +87,13 @@ rollback() {
     git reset --hard "$OLD_COMMIT"
     cp "$ENV_BACKUP" "$ENV_FILE"
     restore_image "$OLD_NODE_IMAGE" "$NODE_IMAGE"
-    restore_image "$OLD_SINGBOX_IMAGE" "$SINGBOX_IMAGE"
+    restore_image "$OLD_RUNTIME_IMAGE" "$VPN_RUNTIME_IMAGE"
     restore_image "$OLD_CERTBOT_IMAGE" "$CERTBOT_IMAGE"
     "${COMPOSE[@]}" up -d --no-build --remove-orphans
     "${COMPOSE[@]}" cp "$CONFIG_BACKUP" "vpn-node-api:$CONFIG_PATH"
     "${COMPOSE[@]}" exec -T --user root vpn-node-api sh -c \
         "chown 1000:1000 '$CONFIG_PATH' && chmod 600 '$CONFIG_PATH'" </dev/null
+    prepare_runtime_config
     "${COMPOSE[@]}" restart sing-box
     if wait_for_status; then
         success "Previous deployment restored"
@@ -103,21 +106,40 @@ rollback() {
 sync_template() {
     local helper=/tmp/feint-sync-singbox.py template=/tmp/feint-singbox-template.json
     local ruleset=/tmp/feint-geoip-ru.srs
+    local template_name template_path
+    template_name="$(env_get NODE_TEMPLATE "$ENV_FILE" default)"
+    case "$template_name" in
+        default) template_path="$INSTALL_DIR/templates/sing-box.json.tpl" ;;
+        vless) template_path="$INSTALL_DIR/templates/vless.json.tpl" ;;
+        hysteria2) template_path="$INSTALL_DIR/templates/hysteria2.json.tpl" ;;
+        *) die "Unknown node template: $template_name" ;;
+    esac
     curl --fail --silent --show-error --location \
         --header 'Accept: application/vnd.github.raw+json' \
         'https://api.github.com/repos/SagerNet/sing-geoip/contents/geoip-ru.srs?ref=rule-set' \
         --output "$ruleset"
     "${COMPOSE[@]}" cp "$INSTALL_DIR/scripts/sync-singbox.py" "vpn-node-api:$helper"
-    "${COMPOSE[@]}" cp "$INSTALL_DIR/templates/sing-box.json.tpl" "vpn-node-api:$template"
+    "${COMPOSE[@]}" cp "$template_path" "vpn-node-api:$template"
     "${COMPOSE[@]}" cp "$ruleset" "vpn-node-api:/opt/sing-box/geoip-ru.srs"
     rm -f "$ruleset"
     "${COMPOSE[@]}" exec -T vpn-node-api python "$helper" \
         "$template" "$CONFIG_PATH" "$CONFIG_PATH.next" </dev/null
-    "${COMPOSE[@]}" exec -T sing-box sing-box check \
-        -c "$CONFIG_PATH.next" </dev/null
     "${COMPOSE[@]}" exec -T vpn-node-api mv \
         "$CONFIG_PATH.next" "$CONFIG_PATH" </dev/null
+    prepare_runtime_config
     "${COMPOSE[@]}" restart sing-box
+}
+
+prepare_runtime_config() {
+    if [[ "$VPN_RUNTIME" == xray ]]; then
+        "${COMPOSE[@]}" exec -T vpn-node-api python -m adapters.xray_config \
+            "$CONFIG_PATH" "$XRAY_CONFIG_PATH" </dev/null
+        "${COMPOSE[@]}" exec -T sing-box xray run -test \
+            -config "$XRAY_CONFIG_PATH" </dev/null
+    else
+        "${COMPOSE[@]}" exec -T sing-box sing-box check \
+            -c "$CONFIG_PATH" </dev/null
+    fi
 }
 
 header "Feint VPN Node Update"
@@ -131,7 +153,17 @@ fi
 "${COMPOSE[@]}" ps -q vpn-node-api | grep -q . \
     || die "vpn-node-api must be running before an update"
 
-OLD_COMMIT="$(git rev-parse HEAD)"
+OLD_COMMIT="${FEINT_UPDATE_OLD_COMMIT:-$(git rev-parse HEAD)}"
+info "Fetching origin/$BRANCH"
+git fetch origin "$BRANCH" --prune
+git reset --hard "origin/$BRANCH"
+if [[ "${FEINT_UPDATE_REEXEC:-0}" != 1 && "$(git rev-parse HEAD)" != "$OLD_COMMIT" ]]; then
+    args=(--dir "$INSTALL_DIR" --branch "$BRANCH")
+    [[ "$FORCE" == false ]] || args+=(--force)
+    FEINT_UPDATE_REEXEC=1 FEINT_UPDATE_OLD_COMMIT="$OLD_COMMIT" \
+        exec bash "$INSTALL_DIR/update.sh" "${args[@]}"
+fi
+
 ENV_BACKUP="$(mktemp "${ENV_FILE}.update.XXXXXX")"
 CONFIG_BACKUP="$(mktemp "${ENV_FILE}.config.XXXXXX")"
 cp "$ENV_FILE" "$ENV_BACKUP"
@@ -139,17 +171,29 @@ cp "$ENV_FILE" "$ENV_BACKUP"
     "$CONFIG_PATH" > "$CONFIG_BACKUP"
 
 NODE_IMAGE="$(env_get NODE_IMAGE "$ENV_FILE" ghcr.io/feint-vpn/feint-node:latest)"
-SINGBOX_IMAGE="$(env_get SINGBOX_IMAGE "$ENV_FILE" ghcr.io/feint-vpn/feint-sing-box:v1.13.12-feint.1)"
+SINGBOX_IMAGE="$(env_get SINGBOX_IMAGE "$ENV_FILE" ghcr.io/feint-vpn/feint-sing-box:v1.13.19-feint.1)"
+XRAY_IMAGE="$(env_get XRAY_IMAGE "$ENV_FILE" ghcr.io/xtls/xray-core:26.7.28)"
+if [[ "$VPN_RUNTIME" == sing-box && "$SINGBOX_IMAGE" == ghcr.io/feint-vpn/feint-sing-box:v1.13.12-feint.1 ]]; then
+    SINGBOX_IMAGE=ghcr.io/feint-vpn/feint-sing-box:v1.13.19-feint.1
+    env_set SINGBOX_IMAGE "$SINGBOX_IMAGE" "$ENV_FILE"
+fi
+VPN_RUNTIME_IMAGE="$(env_get VPN_RUNTIME_IMAGE "$ENV_FILE" "$SINGBOX_IMAGE")"
+[[ "$VPN_RUNTIME" != xray ]] || VPN_RUNTIME_IMAGE="$XRAY_IMAGE"
+env_set VPN_RUNTIME_IMAGE "$VPN_RUNTIME_IMAGE" "$ENV_FILE"
+if [[ "$VPN_RUNTIME" == xray ]]; then
+    env_set VPN_RUNTIME_CONTAINER_NAME xray "$ENV_FILE"
+    env_set VPN_RUNTIME_COMMAND 'run -config /opt/sing-box/xray.json' "$ENV_FILE"
+    env_set XRAY_CONFIG_PATH "$XRAY_CONFIG_PATH" "$ENV_FILE"
+else
+    env_set VPN_RUNTIME_CONTAINER_NAME sing-box "$ENV_FILE"
+    env_set VPN_RUNTIME_COMMAND 'run -c /opt/sing-box/config.json' "$ENV_FILE"
+fi
 CERTBOT_IMAGE="certbot/certbot:latest"
 OLD_NODE_IMAGE="$("${COMPOSE[@]}" images -q vpn-node-api)"
-OLD_SINGBOX_IMAGE="$("${COMPOSE[@]}" images -q sing-box)"
+OLD_RUNTIME_IMAGE="$("${COMPOSE[@]}" images -q sing-box)"
 OLD_CERTBOT_IMAGE="$("${COMPOSE[@]}" images -q certbot)"
 
 trap rollback ERR
-
-info "Fetching origin/$BRANCH"
-git fetch origin "$BRANCH" --prune
-git reset --hard "origin/$BRANCH"
 
 DOCKER_GID="$(getent group docker | cut -d: -f3)"
 if [[ -z "$DOCKER_GID" ]]; then
@@ -160,6 +204,55 @@ env_set DOCKER_GID "$DOCKER_GID" "$ENV_FILE"
 
 info "Pulling service images"
 "${COMPOSE[@]}" pull certbot sing-box vpn-node-api
+
+if [[ -z "$(env_get REALITY_PRIVATE_KEY "$ENV_FILE")" \
+    || -z "$(env_get REALITY_PUBLIC_KEY "$ENV_FILE")" \
+    || -z "$(env_get REALITY_SHORT_ID "$ENV_FILE")" ]]; then
+    if [[ "$VPN_RUNTIME" == xray ]]; then
+        REALITY_KEYS="$(docker run --rm "$XRAY_IMAGE" x25519)"
+        REALITY_PRIVATE_KEY="$(sed -n 's/^PrivateKey: //p' <<< "$REALITY_KEYS")"
+        REALITY_PUBLIC_KEY="$(sed -n 's/^Password (PublicKey): //p' <<< "$REALITY_KEYS")"
+    else
+        REALITY_KEYS="$(docker run --rm "$SINGBOX_IMAGE" generate reality-keypair)"
+        REALITY_PRIVATE_KEY="$(sed -n 's/^PrivateKey: //p' <<< "$REALITY_KEYS")"
+        REALITY_PUBLIC_KEY="$(sed -n 's/^PublicKey: //p' <<< "$REALITY_KEYS")"
+    fi
+    [[ -n "$REALITY_PRIVATE_KEY" && -n "$REALITY_PUBLIC_KEY" ]] \
+        || { error "Could not generate a REALITY key pair"; false; }
+    env_set REALITY_PRIVATE_KEY "$REALITY_PRIVATE_KEY" "$ENV_FILE"
+    env_set REALITY_PUBLIC_KEY "$REALITY_PUBLIC_KEY" "$ENV_FILE"
+    env_set REALITY_SHORT_ID "$(openssl rand -hex 8)" "$ENV_FILE"
+fi
+NODE_TEMPLATE="$(env_get NODE_TEMPLATE "$ENV_FILE" default)"
+if [[ "$VPN_RUNTIME" == xray && "$NODE_TEMPLATE" != vless ]]; then
+    error "Xray runtime requires the vless template"
+    false
+fi
+REALITY_SERVER_NAME_DEFAULT=google.com
+[[ "$NODE_TEMPLATE" != vless ]] || REALITY_SERVER_NAME_DEFAULT=vkvideo.ru
+env_set REALITY_SERVER_NAME \
+    "$(env_get REALITY_SERVER_NAME "$ENV_FILE" "$REALITY_SERVER_NAME_DEFAULT")" \
+    "$ENV_FILE"
+
+if [[ "$NODE_TEMPLATE" == default && "$(env_get VLESS_PORT "$ENV_FILE")" != 443 ]]; then
+    [[ "$(env_get API_PORT "$ENV_FILE")" != 443 ]] || { error "Port 443 is occupied by the node API"; false; }
+    reserved=(
+        "$(env_get API_PORT "$ENV_FILE")"
+        "$(env_get VLESS_PORT "$ENV_FILE")"
+        "$(env_get VMESS_PORT "$ENV_FILE")"
+        "$(env_get TROJAN_PORT "$ENV_FILE")"
+        "$(env_get HYSTERIA2_PORT "$ENV_FILE")"
+        "$(env_get SHADOWSOCKS_PORT "$ENV_FILE")"
+    )
+    for key in VMESS_PORT TROJAN_PORT SHADOWSOCKS_PORT; do
+        if [[ "$(env_get "$key" "$ENV_FILE")" == 443 ]]; then
+            env_set "$key" "$(port_find_free_unique tcp 10000 60000 "${reserved[@]}")" "$ENV_FILE"
+        fi
+    done
+    env_set VLESS_PORT 443 "$ENV_FILE"
+fi
+chmod 600 "$ENV_FILE"
+
 "${COMPOSE[@]}" up -d --no-build --remove-orphans
 
 info "Synchronizing the persisted sing-box config with the updated template"

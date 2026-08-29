@@ -20,6 +20,9 @@ values = {
     "SHADOWSOCKS_METHOD": os.environ["SHADOWSOCKS_METHOD"],
     "SHADOWSOCKS_PASSWORD": os.environ["SHADOWSOCKS_PASSWORD"],
     "CLASH_API_SECRET": os.environ["CLASH_API_SECRET"],
+    "REALITY_PRIVATE_KEY": os.environ["REALITY_PRIVATE_KEY"],
+    "REALITY_SHORT_ID": os.environ["REALITY_SHORT_ID"],
+    "REALITY_SERVER_NAME": os.environ["REALITY_SERVER_NAME"],
 }
 
 rendered = template_path.read_text(encoding="utf-8")
@@ -47,6 +50,17 @@ users_by_tag = {
 }
 for inbound in updated.get("inbounds", []):
     inbound["users"] = users_by_tag.get(inbound.get("tag"), [])
+
+updated["outbounds"].extend(
+    outbound
+    for outbound in current.get("outbounds", [])
+    if str(outbound.get("tag", "")).startswith("outbound:")
+)
+updated["route"]["rules"].extend(
+    rule
+    for rule in current.get("route", {}).get("rules", [])
+    if str(rule.get("outbound", "")).startswith("outbound:")
+)
 
 usernames = sorted(
     {

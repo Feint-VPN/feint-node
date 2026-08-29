@@ -35,6 +35,7 @@ The script handles everything with **zero prompts**:
 | `--dir`      | `/opt/vpn-node` | Install directory            |
 | `--sub`      | `true`          | Enable subscription endpoint |
 | `--branch`   | `main`          | Git branch to clone          |
+| `--template` | `default`       | `default`, `vless`, or `hysteria2` |
 
 When it finishes you'll see the API URL, all ports, and the Hiddify subscription URL.
 
@@ -58,6 +59,10 @@ The updater preserves `.env.local` and existing users, applies the latest
 sing-box template, validates it, pulls the published images, and waits for the
 authenticated `/status` readiness check. A failed rollout restores the previous
 commit, images and runtime configuration.
+
+For the Xray VLESS profile, install with `--runtime xray --template vless`.
+It uses TCP `38519` for VLESS Reality and UDP `443` for Hysteria2, leaving
+TCP `443` available for a web server.
 
 ---
 
@@ -124,17 +129,17 @@ All 5 protocols will appear automatically: VLESS, VMess, Trojan, Hysteria2, Shad
 
 | Protocol        | Port     | Transport                 |
 | --------------- | -------- | ------------------------- |
-| VLESS Vision TLS | 8552 TCP | Direct (xtls-rprx-vision) |
-| VMess           | 489 TCP  | WebSocket + TLS           |
-| Trojan          | 2267 TCP | TLS                       |
-| Hysteria2       | 2294 UDP | QUIC                      |
-| Shadowsocks     | 8654 TCP | 2022-blake3-aes-256-gcm   |
+| VLESS Vision REALITY | 443 TCP | Direct (xtls-rprx-vision) |
+| VMess           | random TCP | WebSocket + TLS           |
+| Trojan          | random TCP | TLS                       |
+| Hysteria2       | random UDP | QUIC                      |
+| Shadowsocks     | random TCP/UDP | 2022-blake3-aes-256-gcm |
 
 Override any port in `.env.local`:
 
 ```bash
 VLESS_PORT=443
-VMESS_PORT=8080
+VMESS_PORT=18443
 # etc.
 ```
 

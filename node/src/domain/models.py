@@ -1,8 +1,8 @@
 """Sing-box configuration models."""
 
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, SecretStr
 
 
 class InboundUser(BaseModel):
@@ -43,8 +43,33 @@ class Inbound(BaseModel):
 
 
 class Outbound(BaseModel):
+    model_config = {"extra": "allow"}
+
     type: str
     tag: str
+
+
+class Hysteria2Obfs(BaseModel):
+    type: Literal["salamander"] = "salamander"
+    password: SecretStr
+
+
+class OutboundTLS(BaseModel):
+    enabled: bool = True
+    server_name: str = Field(min_length=1, max_length=253)
+    insecure: bool = False
+
+
+class Hysteria2OutboundConfig(BaseModel):
+    type: Literal["hysteria2"] = "hysteria2"
+    server: str = Field(min_length=1, max_length=253)
+    server_port: int = Field(ge=1, le=65535)
+    password: SecretStr
+    tls: OutboundTLS
+    obfs: Hysteria2Obfs | None = None
+    up_mbps: int | None = Field(default=None, gt=0)
+    down_mbps: int | None = Field(default=None, gt=0)
+    auth_users: set[str] = Field(default_factory=set)
 
 
 class DNSServer(BaseModel):
@@ -73,6 +98,7 @@ class RouteRule(BaseModel):
     ip_is_private: bool | None = None
     ip_cidr: list[str] | None = None
     rule_set: str | list[str] | None = None
+    auth_user: list[str] | None = None
     outbound: str | None = None
 
 

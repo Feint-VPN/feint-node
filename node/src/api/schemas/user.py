@@ -16,6 +16,14 @@ class UserCreateRequest(BaseModel):
     password: str | None = None
 
 
+class UserBulkCreateRequest(BaseModel):
+    users: list[UserCreateRequest] = Field(min_length=1, max_length=500)
+
+
+class UserBulkCreateResponse(BaseModel):
+    created: int
+
+
 class UserResponse(BaseModel):
     username: str
     uuid: str

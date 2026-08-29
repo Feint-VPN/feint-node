@@ -14,6 +14,7 @@
 #    --dir      Install directory                (default: /opt/vpn-node)
 #    --sub      Enable subscription endpoint     (default: true)
 #    --branch   Git branch to clone              (default: main)
+#    --runtime  VPN core: sing-box or xray       (default: sing-box)
 #    --new-ssh-port Fixed SSH port for non-interactive SDK installation
 #    --ssh-public-key Public key installed before password SSH is disabled
 # ============================================================
@@ -44,10 +45,13 @@ API_PORT="8337"
 INSTALL_DIR="/opt/vpn-node"
 SUB_ENABLED="true"
 BRANCH="main"
-NODE_IMAGE="ghcr.io/feint-vpn/feint-node:latest"
-SINGBOX_IMAGE="ghcr.io/feint-vpn/feint-sing-box:v1.13.12-feint.1"
+NODE_IMAGE="${NODE_IMAGE:-ghcr.io/feint-vpn/feint-node:latest}"
+SINGBOX_IMAGE="${SINGBOX_IMAGE:-ghcr.io/feint-vpn/feint-sing-box:v1.13.19-feint.1}"
+XRAY_IMAGE="${XRAY_IMAGE:-ghcr.io/xtls/xray-core:26.7.28}"
+VPN_RUNTIME="sing-box"
 NEW_SSH_PORT=""
 SSH_PUBLIC_KEY=""
+NODE_TEMPLATE="default"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -58,6 +62,8 @@ while [[ $# -gt 0 ]]; do
         --dir)      INSTALL_DIR="$2"; shift 2 ;;
         --sub)      SUB_ENABLED="$2"; shift 2 ;;
         --branch)   BRANCH="$2";      shift 2 ;;
+        --runtime)  [[ $# -ge 2 ]] || die "--runtime requires a value"; VPN_RUNTIME="$2"; shift 2 ;;
+        --template) [[ $# -ge 2 ]] || die "--template requires a value"; NODE_TEMPLATE="$2"; shift 2 ;;
         --new-ssh-port) [[ $# -ge 2 ]] || die "--new-ssh-port requires a value"; NEW_SSH_PORT="$2"; shift 2 ;;
         --ssh-public-key) [[ $# -ge 2 ]] || die "--ssh-public-key requires a value"; SSH_PUBLIC_KEY="$2"; shift 2 ;;
         -h|--help)
@@ -70,6 +76,8 @@ while [[ $# -gt 0 ]]; do
             echo "  --dir      Install directory            (default: /opt/vpn-node)"
             echo "  --sub      Enable subscription endpoint (default: true)"
             echo "  --branch   Git branch                   (default: main)"
+            echo "  --runtime  VPN core: sing-box or xray   (default: sing-box)"
+            echo "  --template Runtime template: default, vless or hysteria2"
             echo "  --new-ssh-port Fixed SSH port; skips interactive confirmation"
             echo "  --ssh-public-key Public key installed before password SSH is disabled"
             exit 0 ;;
@@ -84,6 +92,17 @@ fi
 
 [[ -z "$DOMAIN" ]] && die "--domain is required"
 [[ -z "$EMAIL"  ]] && die "--email is required"
+case "$NODE_TEMPLATE" in
+    default|vless|hysteria2) ;;
+    *) die "Unknown node template: $NODE_TEMPLATE" ;;
+esac
+case "$VPN_RUNTIME" in
+    sing-box|xray) ;;
+    *) die "Unknown VPN runtime: $VPN_RUNTIME" ;;
+esac
+if [[ "$VPN_RUNTIME" == xray && "$NODE_TEMPLATE" != vless ]]; then
+    die "Xray runtime currently requires --template vless"
+fi
 
 echo "$DOMAIN" | grep -qE '^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)+$' \
     || die "Invalid domain: $DOMAIN"
@@ -92,8 +111,8 @@ echo "$EMAIL" | grep -qE '^[^@]+@[^@]+\.[^@]+$' \
 echo "$API_PORT" | grep -qE '^[0-9]{2,5}$' \
     || die "Invalid port: $API_PORT"
 if [[ -n "$NEW_SSH_PORT" ]]; then
-    [[ "$NEW_SSH_PORT" =~ ^[0-9]+$ ]] && (( NEW_SSH_PORT >= 1024 && NEW_SSH_PORT <= 65535 )) \
-        || die "--new-ssh-port must be between 1024 and 65535"
+    [[ "$NEW_SSH_PORT" =~ ^[0-9]+$ ]] && (( NEW_SSH_PORT >= 1 && NEW_SSH_PORT <= 65535 )) \
+        || die "--new-ssh-port must be between 1 and 65535"
 fi
 
 # ── must run as root ──────────────────────────────────────────────────────────
@@ -106,7 +125,7 @@ if [[ -f "$INSTALL_DIR/.env.local" ]]; then
 fi
 
 # ── banner ────────────────────────────────────────────────────────────────────
-if [[ -t 1 && -n "${TERM:-}" ]]; then
+if [[ -t 1 && -n "${TERM:-}" && "$TERM" != dumb ]]; then
     clear
 fi
 echo -e "${BOLD}${CYAN}"
@@ -124,6 +143,7 @@ echo -e "  ${BOLD}Domain:${NC}   $DOMAIN"
 echo -e "  ${BOLD}Email:${NC}    $EMAIL"
 echo -e "  ${BOLD}API port:${NC} $API_PORT"
 echo -e "  ${BOLD}Install:${NC}  $INSTALL_DIR"
+echo -e "  ${BOLD}Runtime:${NC}  $VPN_RUNTIME"
 echo ""
 
 # ── detect OS ────────────────────────────────────────────────────────────────
@@ -257,14 +277,45 @@ fi
 SS_PASSWORD=$(openssl rand -base64 32 | tr -d '\n')
 SS_METHOD="2022-blake3-aes-256-gcm"
 CLASH_API_SECRET=$(gen_secret 32)
+if [[ "$VPN_RUNTIME" == xray ]]; then
+    REALITY_KEYS=$(docker run --rm "$XRAY_IMAGE" x25519)
+    REALITY_PRIVATE_KEY=$(sed -n 's/^PrivateKey: //p' <<< "$REALITY_KEYS")
+    REALITY_PUBLIC_KEY=$(sed -n 's/^Password (PublicKey): //p' <<< "$REALITY_KEYS")
+else
+    REALITY_KEYS=$(docker run --rm "$SINGBOX_IMAGE" generate reality-keypair)
+    REALITY_PRIVATE_KEY=$(sed -n 's/^PrivateKey: //p' <<< "$REALITY_KEYS")
+    REALITY_PUBLIC_KEY=$(sed -n 's/^PublicKey: //p' <<< "$REALITY_KEYS")
+fi
+REALITY_SHORT_ID=$(openssl rand -hex 8)
+if [[ "$NODE_TEMPLATE" == vless ]]; then
+    REALITY_SERVER_NAME=vkvideo.ru
+else
+    REALITY_SERVER_NAME=google.com
+fi
+[[ -n "$REALITY_PRIVATE_KEY" && -n "$REALITY_PUBLIC_KEY" ]] \
+    || die "Could not generate a REALITY key pair"
 
 #   Random VPN ports
 info "Checking and selecting ports..."
 port_require_available tcp "$API_PORT" "API_PORT" || die "Choose another --api-port value"
-VLESS_PORT=$(port_find_free_unique tcp 10000 60000 "$API_PORT") || die "Could not find a free VLESS TCP port"
+if [[ "$NODE_TEMPLATE" == vless ]]; then
+    VLESS_PORT=38519
+else
+    VLESS_PORT=443
+fi
+if [[ "$NODE_TEMPLATE" != hysteria2 ]]; then
+    port_require_available tcp "$VLESS_PORT" "VLESS REALITY" \
+        || die "Port ${VLESS_PORT}/TCP is required for VLESS REALITY"
+fi
 VMESS_PORT=$(port_find_free_unique tcp 10000 60000 "$API_PORT" "$VLESS_PORT") || die "Could not find a free VMess TCP port"
 TROJAN_PORT=$(port_find_free_unique tcp 10000 60000 "$API_PORT" "$VLESS_PORT" "$VMESS_PORT") || die "Could not find a free Trojan TCP port"
-HY2_PORT=$(port_find_free_unique udp 10000 60000) || die "Could not find a free Hysteria2 UDP port"
+if [[ "$VPN_RUNTIME" == xray && "$NODE_TEMPLATE" == vless ]]; then
+    HY2_PORT=443
+    port_require_available udp "$HY2_PORT" "Hysteria2" \
+        || die "Port ${HY2_PORT}/UDP is required for Hysteria2"
+else
+    HY2_PORT=$(port_find_free_unique udp 10000 60000) || die "Could not find a free Hysteria2 UDP port"
+fi
 SS_PORT=$(port_find_free_both 10000 60000 "$API_PORT" "$VLESS_PORT" "$VMESS_PORT" "$TROJAN_PORT" "$HY2_PORT") || die "Could not find a free Shadowsocks TCP/UDP port"
 
 # Detect public IP
@@ -274,6 +325,15 @@ SERVER_IP=$(curl -4sSf https://api.ipify.org 2>/dev/null \
          || echo "0.0.0.0")
 
 info "Detected public IP: $SERVER_IP"
+
+VPN_RUNTIME_IMAGE="$SINGBOX_IMAGE"
+VPN_RUNTIME_CONTAINER_NAME=sing-box
+VPN_RUNTIME_COMMAND='run -c /opt/sing-box/config.json'
+if [[ "$VPN_RUNTIME" == xray ]]; then
+    VPN_RUNTIME_IMAGE="$XRAY_IMAGE"
+    VPN_RUNTIME_CONTAINER_NAME=xray
+    VPN_RUNTIME_COMMAND='run -config /opt/sing-box/xray.json'
+fi
 
 # Write .env.local
 info "Writing $ENV_FILE ..."
@@ -290,6 +350,7 @@ DEV_MODE=false
 # Server Settings
 SERVER_DOMAIN=${DOMAIN}
 SERVER_IP=${SERVER_IP}
+NODE_TEMPLATE=${NODE_TEMPLATE}
 
 # SSL/TLS Settings
 TLS_ENABLED=true
@@ -309,6 +370,12 @@ SHADOWSOCKS_PORT=${SS_PORT}
 SHADOWSOCKS_PASSWORD=${SS_PASSWORD}
 SHADOWSOCKS_METHOD=${SS_METHOD}
 
+# VLESS REALITY Settings
+REALITY_PRIVATE_KEY=${REALITY_PRIVATE_KEY}
+REALITY_PUBLIC_KEY=${REALITY_PUBLIC_KEY}
+REALITY_SHORT_ID=${REALITY_SHORT_ID}
+REALITY_SERVER_NAME=${REALITY_SERVER_NAME}
+
 # Hysteria2 Bandwidth
 HYSTERIA2_UP_MBPS=1000
 HYSTERIA2_DOWN_MBPS=1000
@@ -327,9 +394,15 @@ LOG_FORMAT=json
 # Docker
 NODE_IMAGE=${NODE_IMAGE}
 SINGBOX_IMAGE=${SINGBOX_IMAGE}
+XRAY_IMAGE=${XRAY_IMAGE}
+VPN_RUNTIME=${VPN_RUNTIME}
+XRAY_CONFIG_PATH=/opt/sing-box/xray.json
+VPN_RUNTIME_IMAGE=${VPN_RUNTIME_IMAGE}
+VPN_RUNTIME_CONTAINER_NAME=${VPN_RUNTIME_CONTAINER_NAME}
+VPN_RUNTIME_COMMAND=${VPN_RUNTIME_COMMAND}
 DOCKER_SOCKET=/var/run/docker.sock
 DOCKER_GID=${DOCKER_GID}
-SINGBOX_CONTAINER_NAME=sing-box
+SINGBOX_CONTAINER_NAME=${VPN_RUNTIME_CONTAINER_NAME}
 CERTBOT_CONTAINER_NAME=certbot
 
 # Paths
@@ -341,6 +414,7 @@ success "Configuration written"
 
 # Allow the API container's appuser (uid 1000) to write this file later
 chown 1000:1000 "$ENV_FILE" 2>/dev/null || true
+chmod 600 "$ENV_FILE"
 
 COMPOSE_PROJECT=$(basename "$INSTALL_DIR")
 COMPOSE_CERT_VOL="${COMPOSE_PROJECT}_certbot-certs"
@@ -405,10 +479,14 @@ compose() { docker compose --env-file "$ENV_FILE" "$@"; }
 info "Pulling service images..."
 run compose pull vpn-node-api sing-box
 
-# ── render and validate sing-box config.json ──────────────────────────────────
-info "Generating sing-box config.json..."
+# ── render and validate the canonical runtime config ──────────────────────────
+info "Generating VPN runtime config..."
 
-SINGBOX_TEMPLATE="$INSTALL_DIR/templates/sing-box.json.tpl"
+case "$NODE_TEMPLATE" in
+    default) SINGBOX_TEMPLATE="$INSTALL_DIR/templates/sing-box.json.tpl" ;;
+    vless) SINGBOX_TEMPLATE="$INSTALL_DIR/templates/vless.json.tpl" ;;
+    hysteria2) SINGBOX_TEMPLATE="$INSTALL_DIR/templates/hysteria2.json.tpl" ;;
+esac
 SINGBOX_CONFIG="/tmp/singbox-install-config.json"
 GEOIP_RULESET="/tmp/geoip-ru.srs"
 [[ -f "$SINGBOX_TEMPLATE" ]] || die "Missing sing-box template: $SINGBOX_TEMPLATE"
@@ -428,6 +506,9 @@ replace_config_value SHADOWSOCKS_PORT "$SS_PORT"
 replace_config_value SHADOWSOCKS_METHOD "$SS_METHOD"
 replace_config_value SHADOWSOCKS_PASSWORD "$SS_PASSWORD"
 replace_config_value CLASH_API_SECRET "$CLASH_API_SECRET"
+replace_config_value REALITY_PRIVATE_KEY "$REALITY_PRIVATE_KEY"
+replace_config_value REALITY_SHORT_ID "$REALITY_SHORT_ID"
+replace_config_value REALITY_SERVER_NAME "$REALITY_SERVER_NAME"
 
 printf '%s\n' "$rendered_config" > "$SINGBOX_CONFIG"
 if grep -qE '\{\{[A-Z0-9_]+\}\}' "$SINGBOX_CONFIG"; then
@@ -441,12 +522,14 @@ curl --fail --silent --show-error --location \
     --output "$GEOIP_RULESET" \
     || die "Could not download the RU GeoIP rule-set"
 
-info "Validating sing-box config..."
-if ! compose run --rm --no-deps \
-    -v "$SINGBOX_CONFIG:/tmp/config.json:ro" \
-    -v "$GEOIP_RULESET:/opt/sing-box/geoip-ru.srs:ro" \
-    sing-box check -c /tmp/config.json </dev/null; then
-    die "Generated sing-box config is invalid"
+if [[ "$VPN_RUNTIME" == sing-box ]]; then
+    info "Validating sing-box config..."
+    if ! compose run --rm --no-deps \
+        -v "$SINGBOX_CONFIG:/tmp/config.json:ro" \
+        -v "$GEOIP_RULESET:/opt/sing-box/geoip-ru.srs:ro" \
+        sing-box check -c /tmp/config.json </dev/null; then
+        die "Generated sing-box config is invalid"
+    fi
 fi
 
 docker volume create "${COMPOSE_SINGBOX_VOL}" >/dev/null 2>&1 || true
@@ -458,6 +541,17 @@ docker run --rm \
         && cp $GEOIP_RULESET /opt/sing-box/geoip-ru.srs \
         && chown -R 1000:1000 /opt/sing-box"
 
+if [[ "$VPN_RUNTIME" == xray ]]; then
+    info "Rendering and validating Xray config..."
+    compose run --rm --no-deps vpn-node-api \
+        python -m adapters.xray_config \
+        /opt/sing-box/config.json /opt/sing-box/xray.json </dev/null
+    docker run --rm --user 1000:1000 \
+        -v "${COMPOSE_SINGBOX_VOL}:/opt/sing-box:ro" \
+        "$XRAY_IMAGE" run -test -config /opt/sing-box/xray.json \
+        || die "Generated Xray config is invalid"
+fi
+
 info "Starting all containers..."
 compose up -d --no-build
 
@@ -466,7 +560,7 @@ STATUS_SCHEME=https
 [[ "$(env_get API_USE_SSL "$ENV_FILE" true)" == true ]] || STATUS_SCHEME=http
 STATUS_URL="${STATUS_SCHEME}://127.0.0.1:${API_PORT}/status"
 wait_for_runtime "$STATUS_URL" \
-    || die "Containers started, but configuration or sing-box is unavailable"
+    || die "Containers started, but configuration or VPN runtime is unavailable"
 success "Node runtime is ready"
 
 # ── MTU TCPMSS clamp (fix for providers with reduced path MTU) ────────────────
@@ -491,15 +585,15 @@ else
     warn "Could not install iptables-persistent — MTU clamp will not persist across reboot."
 fi
 
-header "Secure host"
-FIREWALL_ARGS=(--dir "$INSTALL_DIR")
+header "Secure SSH"
+SSH_ARGS=(--dir "$INSTALL_DIR")
 if [[ -n "$NEW_SSH_PORT" ]]; then
     [[ -n "$SSH_PUBLIC_KEY" ]] || die "--new-ssh-port requires --ssh-public-key"
-    FIREWALL_ARGS+=(--ssh-port "$NEW_SSH_PORT" --ssh-public-key "$SSH_PUBLIC_KEY" --no-confirm)
+    SSH_ARGS+=(--ssh-port "$NEW_SSH_PORT" --ssh-public-key "$SSH_PUBLIC_KEY" --no-confirm)
 fi
-bash "$INSTALL_DIR/scripts/setup-firewall.sh" "${FIREWALL_ARGS[@]}"
+bash "$INSTALL_DIR/scripts/setup-ssh.sh" "${SSH_ARGS[@]}" || die "SSH setup failed"
 wait_for_status "$STATUS_URL" \
-    || die "Host was secured, but the complete node status is not healthy"
+    || die "SSH was secured, but the complete node status is not healthy"
 success "API status is healthy"
 
 # ── summary ───────────────────────────────────────────────────────────────────
@@ -512,11 +606,18 @@ echo -e "  ${BOLD}API credentials:${NC}"
 echo -e "    Stored privately in ${ENV_FILE}"
 echo ""
 echo -e "  ${BOLD}VPN Ports:${NC}"
-echo -e "    VLESS Vision TLS → ${VLESS_PORT}/TCP"
-echo -e "    VMess+WS+TLS  → ${VMESS_PORT}/TCP"
-echo -e "    Trojan         → ${TROJAN_PORT}/TCP"
-echo -e "    Hysteria2      → ${HY2_PORT}/UDP"
-echo -e "    Shadowsocks    → ${SS_PORT}/TCP"
+echo -e "    Runtime: ${VPN_RUNTIME}"
+if [[ "$NODE_TEMPLATE" == default ]]; then
+    echo -e "    VLESS Vision TLS → ${VLESS_PORT}/TCP"
+    echo -e "    VMess+WS+TLS  → ${VMESS_PORT}/TCP"
+    echo -e "    Trojan         → ${TROJAN_PORT}/TCP"
+    echo -e "    Hysteria2      → ${HY2_PORT}/UDP"
+    echo -e "    Shadowsocks    → ${SS_PORT}/TCP"
+elif [[ "$NODE_TEMPLATE" == vless ]]; then
+    echo -e "    VLESS Vision REALITY → ${VLESS_PORT}/TCP"
+else
+    echo "    Hysteria2: ${HY2_PORT}/UDP"
+fi
 echo ""
 echo -e "  ${BOLD}Next steps:${NC}"
 echo ""

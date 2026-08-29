@@ -15,7 +15,10 @@ services:
       - CONFIG_PATH=/opt/sing-box/config.json
       - BACKUP_DIR=/opt/sing-box/backups
       - DOCKER_SOCKET=/var/run/docker.sock
-      - SINGBOX_CONTAINER_NAME=sing-box
+      - SINGBOX_CONTAINER_NAME=${VPN_RUNTIME_CONTAINER_NAME:-sing-box}
+      - VPN_RUNTIME=${VPN_RUNTIME:-sing-box}
+      - VPN_RUNTIME_CONTAINER_NAME=${VPN_RUNTIME_CONTAINER_NAME:-sing-box}
+      - XRAY_CONFIG_PATH=${XRAY_CONFIG_PATH:-/opt/sing-box/xray.json}
       - CLASH_API_URL=${CLASH_API_URL:-http://host.docker.internal:9090}
       - V2RAY_API_ADDRESS=${V2RAY_API_ADDRESS:-host.docker.internal:10085}
       - TRAFFIC_STATE_PATH=/opt/sing-box/traffic.json
@@ -30,15 +33,16 @@ services:
       - vpn-network
 
   sing-box:
-    image: ${SINGBOX_IMAGE:-ghcr.io/feint-vpn/feint-sing-box:v1.13.12-feint.1}
-    container_name: sing-box
+    image: ${VPN_RUNTIME_IMAGE:-ghcr.io/feint-vpn/feint-sing-box:v1.13.19-feint.1}
+    container_name: ${VPN_RUNTIME_CONTAINER_NAME:-sing-box}
+    user: "1000:1000"
     network_mode: host
     env_file:
       - .env.local
     volumes:
       - sing-box-data:/opt/sing-box
       - certbot-certs:/etc/letsencrypt:ro
-    command: run -c ${CONFIG_PATH:-/opt/sing-box/config.json}
+    command: ${VPN_RUNTIME_COMMAND:-run -c /opt/sing-box/config.json}
     restart: unless-stopped
 
   certbot:

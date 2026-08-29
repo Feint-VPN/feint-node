@@ -10,12 +10,12 @@ The `config.json` template is the initial sing-box configuration used during nod
 
 The template includes the following protocol inbounds:
 
-1. **VLESS Vision with TLS** (Port 8443)
+1. **VLESS Vision with REALITY** (Port 443)
    - Tag: `vless-reality-in`
-   - Uses the node's TLS certificate
+   - Uses a per-node X25519 key pair and short ID
    - Multiplex disabled for Vision compatibility
 
-2. **VMess with WebSocket** (Port 443)
+2. **VMess with WebSocket** (Port 8443 in the example environment)
    - Tag: `vmess-ws-in`
    - Transport: WebSocket with path `/vmess-path`
    - TLS enabled with Let's Encrypt certificates

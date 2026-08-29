@@ -32,27 +32,27 @@ For SDK-controlled provisioning, also choose the future SSH port:
 sudo bash install.sh \
   --domain vpn.example.com \
   --email admin@example.com \
-  --new-ssh-port 41035 \
+  --new-ssh-port 220 \
   --ssh-public-key "$(cat ~/.ssh/id_ed25519.pub)"
 ```
 
-This mode does not prompt for `CONFIRM`; the SDK reconnects to port `41035`
+This mode does not prompt for `CONFIRM`; the SDK reconnects to port `220`
 after installation.
 
 The installer validates the requested API port, finds unused protocol ports,
 writes them to `/opt/vpn-node/.env.local`, and starts the stack. It reuses
 normal Docker build caching on later updates.
 
-## 3. Configure the firewall
+## 3. SSH hardening
 
 ```bash
 cd /opt/vpn-node
-sudo ./scripts/setup-firewall.sh
+sudo ./scripts/setup-ssh.sh
 ```
 
-The firewall script reads the selected values from `.env.local`, moves SSH to a
-new port, and closes every other host port. Keep the original terminal open and
-confirm a second SSH session when prompted.
+The SSH script moves SSH to a checked non-default port, installs an authorized
+key and disables password login. Keep the original terminal open and confirm a
+second SSH session when prompted. Feint does not manage host firewall rules.
 
 ## 4. Verify the node
 
@@ -85,9 +85,6 @@ bash scripts/ports.sh set --api 8337 --vless 28473 --apply
 
 # Or apply a completely new checked plan
 bash scripts/ports.sh randomize --apply
-
-# Synchronize UFW after the applied change
-sudo ./scripts/setup-firewall.sh
 ```
 
 `--apply` validates the proposed plan, updates `.env.local`, synchronizes the

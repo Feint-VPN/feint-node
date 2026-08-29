@@ -8,6 +8,11 @@ from domain.ports import IConfigUrlBuilder
 
 
 class UrlBuilder(IConfigUrlBuilder):
+    def __init__(self, public_key: str, short_id: str, server_name: str) -> None:
+        self.public_key = public_key
+        self.short_id = short_id
+        self.server_name = server_name
+
     def vless_url(
         self,
         uuid: str,
@@ -17,8 +22,12 @@ class UrlBuilder(IConfigUrlBuilder):
         params = urlencode(
             {
                 "type": "tcp",
-                "security": "tls",
-                "sni": domain,
+                "security": "reality",
+                "sni": self.server_name,
+                "fp": "chrome",
+                "pbk": self.public_key,
+                "sid": self.short_id,
+                "spx": "/",
                 "flow": "xtls-rprx-vision",
             }
         )
