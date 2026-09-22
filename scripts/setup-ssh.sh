@@ -69,11 +69,7 @@ VMESS_PORT="$(env_get VMESS_PORT "$ENV_FILE")"
 TROJAN_PORT="$(env_get TROJAN_PORT "$ENV_FILE")"
 HYSTERIA2_PORT="$(env_get HYSTERIA2_PORT "$ENV_FILE")"
 SHADOWSOCKS_PORT="$(env_get SHADOWSOCKS_PORT "$ENV_FILE")"
-ssh_connection="${SSH_CONNECTION:-}"
-OLD_SSH_PORT="${ssh_connection##* }"
-if ! port_validate "$OLD_SSH_PORT"; then
-    sshd_setting port OLD_SSH_PORT || die "Could not determine the current SSH port"
-fi
+sshd_setting port OLD_SSH_PORT || die "Could not determine the current SSH port"
 port_validate "$OLD_SSH_PORT" || die "Invalid current SSH port: $OLD_SSH_PORT"
 
 reserved=(80 "$OLD_SSH_PORT" "$API_PORT" "$VLESS_PORT" "$VMESS_PORT" "$TROJAN_PORT" "$HYSTERIA2_PORT" "$SHADOWSOCKS_PORT")
