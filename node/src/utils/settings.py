@@ -29,6 +29,18 @@ class Settings:
         self.SINGBOX_CONTAINER_NAME: str = os.getenv(
             "SINGBOX_CONTAINER_NAME", "sing-box"
         )
+        self.RATHOLE_CONTAINER_NAME: str = os.getenv(
+            "RATHOLE_CONTAINER_NAME", "feint-rathole"
+        )
+        self.RATHOLE_CONFIG_PATH: str = os.getenv(
+            "RATHOLE_CONFIG_PATH", "/opt/relay/rathole.toml"
+        )
+        self.RATHOLE_STATE_PATH: str = os.getenv(
+            "RATHOLE_STATE_PATH", "/opt/relay/state.json"
+        )
+        self.RATHOLE_PRIVATE_KEY: str = os.getenv("RATHOLE_PRIVATE_KEY", "")
+        self.RATHOLE_PUBLIC_KEY: str = os.getenv("RATHOLE_PUBLIC_KEY", "")
+        self.REVERSE_PROXY_PORT: int = int(os.getenv("REVERSE_PROXY_PORT", "39081"))
         self.CERTBOT_CONTAINER_NAME: str = os.getenv(
             "CERTBOT_CONTAINER_NAME", "certbot"
         )

@@ -48,6 +48,7 @@ BRANCH="main"
 NODE_IMAGE="${NODE_IMAGE:-ghcr.io/feint-vpn/feint-node:latest}"
 SINGBOX_IMAGE="${SINGBOX_IMAGE:-ghcr.io/feint-vpn/feint-sing-box:v1.13.19-feint.1}"
 XRAY_IMAGE="${XRAY_IMAGE:-ghcr.io/xtls/xray-core:26.7.28}"
+RATHOLE_IMAGE="${RATHOLE_IMAGE:-ghcr.io/feint-vpn/feint-rathole:v0.5.0-feint.1}"
 VPN_RUNTIME="sing-box"
 NEW_SSH_PORT=""
 SSH_PUBLIC_KEY=""
@@ -295,6 +296,12 @@ fi
 [[ -n "$REALITY_PRIVATE_KEY" && -n "$REALITY_PUBLIC_KEY" ]] \
     || die "Could not generate a REALITY key pair"
 
+RATHOLE_KEYS=$(docker run --rm "$RATHOLE_IMAGE" --genkey)
+RATHOLE_PRIVATE_KEY=$(sed -n '/^Private Key:/{n;p;}' <<< "$RATHOLE_KEYS")
+RATHOLE_PUBLIC_KEY=$(sed -n '/^Public Key:/{n;p;}' <<< "$RATHOLE_KEYS")
+[[ -n "$RATHOLE_PRIVATE_KEY" && -n "$RATHOLE_PUBLIC_KEY" ]] \
+    || die "Could not generate a reverse transport key pair"
+
 #   Random VPN ports
 info "Checking and selecting ports..."
 port_require_available tcp "$API_PORT" "API_PORT" || die "Choose another --api-port value"
@@ -317,6 +324,8 @@ else
     HY2_PORT=$(port_find_free_unique udp 10000 60000) || die "Could not find a free Hysteria2 UDP port"
 fi
 SS_PORT=$(port_find_free_both 10000 60000 "$API_PORT" "$VLESS_PORT" "$VMESS_PORT" "$TROJAN_PORT" "$HY2_PORT") || die "Could not find a free Shadowsocks TCP/UDP port"
+REVERSE_PROXY_PORT=$(port_find_free_unique tcp 20000 60000 "$API_PORT" "$VLESS_PORT" "$VMESS_PORT" "$TROJAN_PORT" "$SS_PORT") \
+    || die "Could not find a local reverse proxy port"
 
 # Detect public IP
 SERVER_IP=$(curl -4sSf https://api.ipify.org 2>/dev/null \
@@ -395,6 +404,7 @@ LOG_FORMAT=json
 NODE_IMAGE=${NODE_IMAGE}
 SINGBOX_IMAGE=${SINGBOX_IMAGE}
 XRAY_IMAGE=${XRAY_IMAGE}
+RATHOLE_IMAGE=${RATHOLE_IMAGE}
 VPN_RUNTIME=${VPN_RUNTIME}
 XRAY_CONFIG_PATH=/opt/sing-box/xray.json
 VPN_RUNTIME_IMAGE=${VPN_RUNTIME_IMAGE}
@@ -404,6 +414,14 @@ DOCKER_SOCKET=/var/run/docker.sock
 DOCKER_GID=${DOCKER_GID}
 SINGBOX_CONTAINER_NAME=${VPN_RUNTIME_CONTAINER_NAME}
 CERTBOT_CONTAINER_NAME=certbot
+RATHOLE_CONTAINER_NAME=feint-rathole
+
+# Encrypted reverse transport
+RATHOLE_PRIVATE_KEY=${RATHOLE_PRIVATE_KEY}
+RATHOLE_PUBLIC_KEY=${RATHOLE_PUBLIC_KEY}
+RATHOLE_CONFIG_PATH=/opt/relay/rathole.toml
+RATHOLE_STATE_PATH=/opt/relay/state.json
+REVERSE_PROXY_PORT=${REVERSE_PROXY_PORT}
 
 # Paths
 CONFIG_PATH=/opt/sing-box/config.json
@@ -420,6 +438,7 @@ COMPOSE_PROJECT=$(basename "$INSTALL_DIR")
 COMPOSE_CERT_VOL="${COMPOSE_PROJECT}_certbot-certs"
 COMPOSE_CERT_WWW_VOL="${COMPOSE_PROJECT}_certbot-www"
 COMPOSE_SINGBOX_VOL="${COMPOSE_PROJECT}_sing-box-data"
+COMPOSE_RELAY_VOL="${COMPOSE_PROJECT}_relay-data"
 
 # ── step 5: obtain TLS certificate ───────────────────────────────────────────
 header "Step 5 / 6 — TLS certificate"
@@ -477,7 +496,7 @@ header "Step 6 / 6 — Start containers"
 compose() { docker compose --env-file "$ENV_FILE" "$@"; }
 
 info "Pulling service images..."
-run compose pull vpn-node-api sing-box
+run compose pull vpn-node-api sing-box rathole
 
 # ── render and validate the canonical runtime config ──────────────────────────
 info "Generating VPN runtime config..."
@@ -503,6 +522,7 @@ replace_config_value VMESS_PORT "$VMESS_PORT"
 replace_config_value TROJAN_PORT "$TROJAN_PORT"
 replace_config_value HYSTERIA2_PORT "$HY2_PORT"
 replace_config_value SHADOWSOCKS_PORT "$SS_PORT"
+replace_config_value REVERSE_PROXY_PORT "$REVERSE_PROXY_PORT"
 replace_config_value SHADOWSOCKS_METHOD "$SS_METHOD"
 replace_config_value SHADOWSOCKS_PASSWORD "$SS_PASSWORD"
 replace_config_value CLASH_API_SECRET "$CLASH_API_SECRET"
@@ -540,6 +560,11 @@ docker run --rm \
         && cp $SINGBOX_CONFIG /opt/sing-box/config.json \
         && cp $GEOIP_RULESET /opt/sing-box/geoip-ru.srs \
         && chown -R 1000:1000 /opt/sing-box"
+
+docker volume create "${COMPOSE_RELAY_VOL}" >/dev/null 2>&1 || true
+docker run --rm \
+    -v "${COMPOSE_RELAY_VOL}:/opt/relay" \
+    alpine sh -c "mkdir -p /opt/relay && chown -R 1000:1000 /opt/relay"
 
 if [[ "$VPN_RUNTIME" == xray ]]; then
     info "Rendering and validating Xray config..."

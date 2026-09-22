@@ -33,6 +33,12 @@
         "certificate_path": "/etc/letsencrypt/live/{{DOMAIN}}/fullchain.pem",
         "key_path": "/etc/letsencrypt/live/{{DOMAIN}}/privkey.pem"
       }
+    },
+    {
+      "type": "mixed",
+      "tag": "reverse-exit-in",
+      "listen": "127.0.0.1",
+      "listen_port": {{REVERSE_PROXY_PORT}}
     }
   ],
   "outbounds": [

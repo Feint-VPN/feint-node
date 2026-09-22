@@ -17,6 +17,7 @@ values = {
     "TROJAN_PORT": os.environ["TROJAN_PORT"],
     "HYSTERIA2_PORT": os.environ["HYSTERIA2_PORT"],
     "SHADOWSOCKS_PORT": os.environ["SHADOWSOCKS_PORT"],
+    "REVERSE_PROXY_PORT": os.environ["REVERSE_PROXY_PORT"],
     "SHADOWSOCKS_METHOD": os.environ["SHADOWSOCKS_METHOD"],
     "SHADOWSOCKS_PASSWORD": os.environ["SHADOWSOCKS_PASSWORD"],
     "CLASH_API_SECRET": os.environ["CLASH_API_SECRET"],
@@ -32,6 +33,7 @@ numeric_values = {
     "TROJAN_PORT",
     "HYSTERIA2_PORT",
     "SHADOWSOCKS_PORT",
+    "REVERSE_PROXY_PORT",
 }
 for name, value in values.items():
     token = f"{{{{{name}}}}}"

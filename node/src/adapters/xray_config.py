@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
+from typing import Any
 
 from domain.models import SingBoxConfig
 
@@ -15,8 +16,14 @@ def render_xray_config(source: str, destination: str) -> None:
     )
     if inbound is None or inbound.tls is None or inbound.tls.reality is None:
         raise ValueError("Xray runtime requires a VLESS REALITY inbound")
-    if any(item.tag.startswith("outbound:") for item in config.outbounds):
-        raise ValueError("Xray runtime supports standalone VLESS only")
+    managed_outbounds = [
+        item for item in config.outbounds if item.tag.startswith("outbound:")
+    ]
+    unsupported = [item.type for item in managed_outbounds if item.type != "socks"]
+    if unsupported:
+        raise ValueError(
+            f"Xray runtime does not support managed outbound: {unsupported[0]}"
+        )
 
     reality = inbound.tls.reality
     handshake = reality.get("handshake") or {}
@@ -29,14 +36,7 @@ def render_xray_config(source: str, destination: str) -> None:
     hysteria = next(
         (item for item in config.inbounds if item.tag == "hysteria2-in"), None
     )
-    if hysteria is not None and (
-        hysteria.tls is None
-        or not hysteria.tls.certificate_path
-        or not hysteria.tls.key_path
-    ):
-        raise ValueError("Xray Hysteria2 TLS settings are incomplete")
-
-    inbounds = [
+    inbounds: list[dict[str, Any]] = [
         {
             "tag": inbound.tag,
             "listen": "0.0.0.0",
@@ -68,6 +68,13 @@ def render_xray_config(source: str, destination: str) -> None:
         }
     ]
     if hysteria is not None:
+        hysteria_tls = hysteria.tls
+        if (
+            hysteria_tls is None
+            or not hysteria_tls.certificate_path
+            or not hysteria_tls.key_path
+        ):
+            raise ValueError("Xray Hysteria2 TLS settings are incomplete")
         inbounds.append(
             {
                 "tag": hysteria.tag,
@@ -88,8 +95,8 @@ def render_xray_config(source: str, destination: str) -> None:
                         "alpn": ["h3"],
                         "certificates": [
                             {
-                                "certificateFile": hysteria.tls.certificate_path,
-                                "keyFile": hysteria.tls.key_path,
+                                "certificateFile": hysteria_tls.certificate_path,
+                                "keyFile": hysteria_tls.key_path,
                             }
                         ],
                     },
@@ -97,6 +104,51 @@ def render_xray_config(source: str, destination: str) -> None:
                 },
             }
         )
+
+    reverse_exit = next(
+        (item for item in config.inbounds if item.tag == "reverse-exit-in"), None
+    )
+    if reverse_exit is not None:
+        inbounds.append(
+            {
+                "tag": reverse_exit.tag,
+                "listen": "127.0.0.1",
+                "port": reverse_exit.listen_port,
+                "protocol": "socks",
+                "settings": {"auth": "noauth", "udp": False},
+            }
+        )
+
+    xray_outbounds: list[dict[str, Any]] = [
+        {"protocol": "freedom", "tag": "direct"},
+        {"protocol": "blackhole", "tag": "block"},
+    ]
+    for outbound in managed_outbounds:
+        data = outbound.model_dump()
+        xray_outbounds.append(
+            {
+                "protocol": "socks",
+                "tag": outbound.tag,
+                "settings": {
+                    "servers": [
+                        {
+                            "address": data["server"],
+                            "port": data["server_port"],
+                        }
+                    ]
+                },
+            }
+        )
+
+    managed_rules = [
+        {
+            "type": "field",
+            "user": rule.auth_user,
+            "outboundTag": rule.outbound,
+        }
+        for rule in config.route.rules
+        if rule.outbound and rule.outbound.startswith("outbound:") and rule.auth_user
+    ]
 
     xray = {
         "log": {"loglevel": config.log.level},
@@ -116,18 +168,16 @@ def render_xray_config(source: str, destination: str) -> None:
         },
         "stats": {},
         "inbounds": inbounds,
-        "outbounds": [
-            {"protocol": "freedom", "tag": "direct"},
-            {"protocol": "blackhole", "tag": "block"},
-        ],
+        "outbounds": xray_outbounds,
         "routing": {
             "domainStrategy": "IPIfNonMatch",
             "rules": [
+                *managed_rules,
                 {
                     "type": "field",
                     "ip": ["geoip:private", "geoip:ru"],
                     "outboundTag": "block",
-                }
+                },
             ],
         },
     }

@@ -14,6 +14,7 @@ permissions:
 env:
   NODE_IMAGE: ghcr.io/feint-vpn/feint-node
   SINGBOX_IMAGE: ghcr.io/feint-vpn/feint-sing-box
+  RATHOLE_IMAGE: ghcr.io/feint-vpn/feint-rathole
 
 jobs:
   build:
@@ -73,3 +74,23 @@ jobs:
           labels: ${{ steps.singbox-metadata.outputs.labels }}
           cache-from: type=gha,scope=sing-box
           cache-to: type=gha,mode=max,scope=sing-box
+
+      - name: Generate rathole image metadata
+        id: rathole-metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.RATHOLE_IMAGE }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=v0.5.0-feint.1
+            type=sha,prefix=sha-
+
+      - name: Build and publish rathole
+        uses: docker/build-push-action@v6
+        with:
+          context: ./rathole
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.rathole-metadata.outputs.tags }}
+          labels: ${{ steps.rathole-metadata.outputs.labels }}
+          cache-from: type=gha,scope=rathole
+          cache-to: type=gha,mode=max,scope=rathole

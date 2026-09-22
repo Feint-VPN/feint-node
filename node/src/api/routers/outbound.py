@@ -11,7 +11,7 @@ from domain.errors import (
     OutboundUserNotFoundError,
     SingBoxReloadError,
 )
-from domain.models import Hysteria2OutboundConfig
+from domain.models import ManagedOutboundConfig
 from domain.outbound_service import OutboundService
 from fastapi import APIRouter, Depends, HTTPException, Path, Response, status
 from utils.logging_config import get_logger
@@ -33,7 +33,7 @@ router = APIRouter(
 @router.put("/{outbound_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def set_outbound(
     outbound_id: OutboundId,
-    body: Hysteria2OutboundConfig,
+    body: ManagedOutboundConfig,
     service: OutboundService = Depends(get_outbound_service),
 ) -> Response:
     try:

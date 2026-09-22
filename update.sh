@@ -173,6 +173,8 @@ cp "$ENV_FILE" "$ENV_BACKUP"
 NODE_IMAGE="$(env_get NODE_IMAGE "$ENV_FILE" ghcr.io/feint-vpn/feint-node:latest)"
 SINGBOX_IMAGE="$(env_get SINGBOX_IMAGE "$ENV_FILE" ghcr.io/feint-vpn/feint-sing-box:v1.13.19-feint.1)"
 XRAY_IMAGE="$(env_get XRAY_IMAGE "$ENV_FILE" ghcr.io/xtls/xray-core:26.7.28)"
+RATHOLE_IMAGE="$(env_get RATHOLE_IMAGE "$ENV_FILE" ghcr.io/feint-vpn/feint-rathole:v0.5.0-feint.1)"
+env_set RATHOLE_IMAGE "$RATHOLE_IMAGE" "$ENV_FILE"
 if [[ "$VPN_RUNTIME" == sing-box && "$SINGBOX_IMAGE" == ghcr.io/feint-vpn/feint-sing-box:v1.13.12-feint.1 ]]; then
     SINGBOX_IMAGE=ghcr.io/feint-vpn/feint-sing-box:v1.13.19-feint.1
     env_set SINGBOX_IMAGE "$SINGBOX_IMAGE" "$ENV_FILE"
@@ -203,7 +205,7 @@ fi
 env_set DOCKER_GID "$DOCKER_GID" "$ENV_FILE"
 
 info "Pulling service images"
-"${COMPOSE[@]}" pull certbot sing-box vpn-node-api
+"${COMPOSE[@]}" pull certbot sing-box vpn-node-api rathole
 
 if [[ -z "$(env_get REALITY_PRIVATE_KEY "$ENV_FILE")" \
     || -z "$(env_get REALITY_PUBLIC_KEY "$ENV_FILE")" \
@@ -222,6 +224,35 @@ if [[ -z "$(env_get REALITY_PRIVATE_KEY "$ENV_FILE")" \
     env_set REALITY_PRIVATE_KEY "$REALITY_PRIVATE_KEY" "$ENV_FILE"
     env_set REALITY_PUBLIC_KEY "$REALITY_PUBLIC_KEY" "$ENV_FILE"
     env_set REALITY_SHORT_ID "$(openssl rand -hex 8)" "$ENV_FILE"
+fi
+
+if [[ -z "$(env_get RATHOLE_PRIVATE_KEY "$ENV_FILE")" \
+    || -z "$(env_get RATHOLE_PUBLIC_KEY "$ENV_FILE")" ]]; then
+    RATHOLE_KEYS="$(docker run --rm "$RATHOLE_IMAGE" --genkey)"
+    RATHOLE_PRIVATE_KEY="$(sed -n '/^Private Key:/{n;p;}' <<< "$RATHOLE_KEYS")"
+    RATHOLE_PUBLIC_KEY="$(sed -n '/^Public Key:/{n;p;}' <<< "$RATHOLE_KEYS")"
+    [[ -n "$RATHOLE_PRIVATE_KEY" && -n "$RATHOLE_PUBLIC_KEY" ]] \
+        || { error "Could not generate a reverse transport key pair"; false; }
+    env_set RATHOLE_PRIVATE_KEY "$RATHOLE_PRIVATE_KEY" "$ENV_FILE"
+    env_set RATHOLE_PUBLIC_KEY "$RATHOLE_PUBLIC_KEY" "$ENV_FILE"
+fi
+env_set RATHOLE_CONTAINER_NAME \
+    "$(env_get RATHOLE_CONTAINER_NAME "$ENV_FILE" feint-rathole)" "$ENV_FILE"
+env_set RATHOLE_CONFIG_PATH \
+    "$(env_get RATHOLE_CONFIG_PATH "$ENV_FILE" /opt/relay/rathole.toml)" "$ENV_FILE"
+env_set RATHOLE_STATE_PATH \
+    "$(env_get RATHOLE_STATE_PATH "$ENV_FILE" /opt/relay/state.json)" "$ENV_FILE"
+
+if [[ -z "$(env_get REVERSE_PROXY_PORT "$ENV_FILE")" ]]; then
+    reserved=(
+        "$(env_get API_PORT "$ENV_FILE")"
+        "$(env_get VLESS_PORT "$ENV_FILE")"
+        "$(env_get VMESS_PORT "$ENV_FILE")"
+        "$(env_get TROJAN_PORT "$ENV_FILE")"
+        "$(env_get SHADOWSOCKS_PORT "$ENV_FILE")"
+    )
+    REVERSE_PROXY_PORT="$(port_find_free_unique tcp 20000 60000 "${reserved[@]}")"
+    env_set REVERSE_PROXY_PORT "$REVERSE_PROXY_PORT" "$ENV_FILE"
 fi
 NODE_TEMPLATE="$(env_get NODE_TEMPLATE "$ENV_FILE" default)"
 if [[ "$VPN_RUNTIME" == xray && "$NODE_TEMPLATE" != vless ]]; then
@@ -252,6 +283,12 @@ if [[ "$NODE_TEMPLATE" == default && "$(env_get VLESS_PORT "$ENV_FILE")" != 443 
     env_set VLESS_PORT 443 "$ENV_FILE"
 fi
 chmod 600 "$ENV_FILE"
+
+COMPOSE_RELAY_VOL="$(basename "$INSTALL_DIR")_relay-data"
+docker volume create "$COMPOSE_RELAY_VOL" >/dev/null 2>&1 || true
+docker run --rm \
+    -v "$COMPOSE_RELAY_VOL:/opt/relay" \
+    alpine sh -c "mkdir -p /opt/relay && chown -R 1000:1000 /opt/relay"
 
 "${COMPOSE[@]}" up -d --no-build --remove-orphans
 

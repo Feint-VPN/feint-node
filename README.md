@@ -6,9 +6,9 @@
 
 > 🌙 A quiet edge runtime for the Feint network: authenticated, atomic and deliberately difficult to discover.
 
-`feint-node` is the small service installed beside one sing-box runtime. It
+`feint-node` is the small service installed beside one VPN runtime. It
 manages protocol users, produces connection URLs, tracks traffic and exposes a
-stable authenticated HTTP API. This repository owns the local sing-box
+stable authenticated HTTP API. This repository owns the canonical node
 configuration and the runtime state of one server. 👾
 
 ## 🌌 Contents
@@ -49,15 +49,15 @@ Authenticated API request
 sing-box file · Docker · traffic · URLs
           │
           ▼
-       sing-box
-VLESS · VMess · Trojan · Hysteria2 · Shadowsocks
+ sing-box or Xray + rathole
+VPN protocols · encrypted reverse transport
 ```
 
 ### Ownership
 
 The node is authoritative for:
 
-- the local sing-box configuration;
+- the canonical local runtime configuration;
 - users currently installed on this node;
 - generated protocol URLs for those users;
 - local traffic counters and runtime telemetry;
@@ -100,9 +100,10 @@ bash install.sh \
   --runtime xray
 ```
 
-`sing-box` remains the default. Xray mode is intentionally limited to a
-standalone VLESS Reality node. It keeps the user, subscription, status and
-traffic-statistics API contract, but rejects cascade outbounds.
+`sing-box` remains the default. Xray mode keeps the user, subscription, status,
+traffic-statistics and SOCKS outbound contracts. This allows a VLESS Reality
+entry node to route selected users through an encrypted reverse transport
+without changing their credentials.
 
 The installer prepares Docker, validates ports, obtains the TLS certificate,
 generates secrets and starts the node:
@@ -216,7 +217,7 @@ Example response:
 ```json
 {
   "status": "ok",
-  "api_version": "2.3",
+  "api_version": "2.4",
   "uptime": "02d 07h",
   "configuration": "available",
   "sing_box": "running",
@@ -263,9 +264,69 @@ sing-box at most once; an unchanged batch does neither.
 | `DELETE` | `/outbound/{outbound_id}/user/{user_id}` | Removes one user from the outbound. |
 | `DELETE` | `/outbound/{outbound_id}/users` | Removes up to 500 users from the outbound. |
 
-Bulk outbound access mutates one route rule and reloads sing-box at most once.
+Bulk outbound access mutates one route rule and reloads the active runtime at
+most once.
 Every supplied user must already exist on the node. Repeating an unchanged
 request performs no save or reload.
+
+Managed outbounds accept `type=hysteria2` on sing-box and `type=socks` on both
+sing-box and Xray. A reverse route uses a local SOCKS5 endpoint and therefore
+does not couple user provisioning to transport setup.
+
+### Reverse transport
+
+| Method | Path | Result |
+| --- | --- | --- |
+| `GET` | `/reverse/key` | Returns this node's public Noise key. |
+| `GET` | `/reverse` | Returns the active role and redacted settings. |
+| `PUT` | `/reverse` | Atomically creates or replaces the node's one reverse link. |
+| `DELETE` | `/reverse` | Disables the reverse link. |
+
+The public entry node runs the `server` role. The exit node runs the `client`
+role and initiates the connection back to the entry node, so the exit does not
+need a publicly reachable tunnel port. The link uses rathole TCP transport with
+Noise encryption. Tokens and remote public keys are never returned by
+`GET /reverse`.
+
+Configure the entry node:
+
+```json
+{
+  "mode": "server",
+  "bind_host": "0.0.0.0",
+  "bind_port": 42100,
+  "expose_port": 42101,
+  "token": "one-random-shared-secret-with-at-least-32-characters"
+}
+```
+
+Configure the exit node with the entry node's `/reverse/key` value:
+
+```json
+{
+  "mode": "client",
+  "remote_host": "ru.example.com",
+  "remote_port": 42100,
+  "token": "one-random-shared-secret-with-at-least-32-characters",
+  "remote_public_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+}
+```
+
+Then create a SOCKS outbound on the entry node. `REVERSE_PROXY_PORT` belongs to
+the exit node; `server_port` below is the entry node's `expose_port`:
+
+```json
+{
+  "type": "socks",
+  "server": "127.0.0.1",
+  "server_port": 42101,
+  "auth_users": []
+}
+```
+
+Assign users through the existing outbound user endpoints. Creating or
+replacing the reverse link never creates users and never changes route grants.
+The current contract intentionally supports one reverse link per node.
 
 ### Statistics
 
@@ -386,6 +447,7 @@ Runtime values live in `.env.local`. Start from [`.env.example`](.env.example).
 | `NODE_IMAGE` | `ghcr.io/feint-vpn/feint-node:latest` | Published node API image. |
 | `SINGBOX_IMAGE` | `ghcr.io/feint-vpn/feint-sing-box:v1.13.19-feint.1` | Feint sing-box runtime image. |
 | `XRAY_IMAGE` | `ghcr.io/xtls/xray-core:26.7.28` | Official Xray runtime image. |
+| `RATHOLE_IMAGE` | `ghcr.io/feint-vpn/feint-rathole:v0.5.0-feint.1` | Pinned reverse-transport sidecar. |
 | `VPN_RUNTIME` | `sing-box` | Selected VPN core: `sing-box` or `xray`. |
 | `VLESS_PORT` | `443` | VLESS Vision REALITY listener. |
 | `REALITY_PRIVATE_KEY` | generated | Server-only REALITY private key. |
@@ -396,6 +458,9 @@ Runtime values live in `.env.local`. Start from [`.env.example`](.env.example).
 | `TROJAN_PORT` | configurable | Trojan listener. |
 | `HYSTERIA2_PORT` | `443` on a new Xray node | Hysteria2 UDP listener; existing nodes preserve their configured port. |
 | `SHADOWSOCKS_PORT` | configurable | Shadowsocks listener. |
+| `REVERSE_PROXY_PORT` | generated | Loopback-only SOCKS5 exit exposed to the reverse client. |
+| `RATHOLE_PRIVATE_KEY` | generated | Server-side Noise private key. |
+| `RATHOLE_PUBLIC_KEY` | generated | Public Noise key returned by `/reverse/key`. |
 | `CONFIG_PATH` | `/opt/sing-box/config.json` | Persisted canonical node configuration. |
 | `XRAY_CONFIG_PATH` | `/opt/sing-box/xray.json` | Generated Xray runtime configuration. |
 | `BACKUP_DIR` | `/opt/sing-box/backups` | Atomic rollback backups. |

@@ -1,6 +1,6 @@
 """Sing-box configuration models."""
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, SecretStr
 
@@ -70,6 +70,43 @@ class Hysteria2OutboundConfig(BaseModel):
     up_mbps: int | None = Field(default=None, gt=0)
     down_mbps: int | None = Field(default=None, gt=0)
     auth_users: set[str] = Field(default_factory=set)
+
+
+class SocksOutboundConfig(BaseModel):
+    type: Literal["socks"] = "socks"
+    server: str = Field(min_length=1, max_length=253)
+    server_port: int = Field(ge=1, le=65535)
+    version: Literal["5"] = "5"
+    auth_users: set[str] = Field(default_factory=set)
+
+
+ManagedOutboundConfig = Annotated[
+    Hysteria2OutboundConfig | SocksOutboundConfig,
+    Field(discriminator="type"),
+]
+
+
+class ReverseServerConfig(BaseModel):
+    mode: Literal["server"] = "server"
+    bind_host: str = Field(default="0.0.0.0", min_length=1, max_length=253)
+    bind_port: int = Field(ge=1, le=65535)
+    expose_host: Literal["127.0.0.1"] = "127.0.0.1"
+    expose_port: int = Field(ge=1, le=65535)
+    token: SecretStr = Field(min_length=32, max_length=256)
+
+
+class ReverseClientConfig(BaseModel):
+    mode: Literal["client"] = "client"
+    remote_host: str = Field(min_length=1, max_length=253)
+    remote_port: int = Field(ge=1, le=65535)
+    token: SecretStr = Field(min_length=32, max_length=256)
+    remote_public_key: str = Field(min_length=44, max_length=64)
+
+
+ReverseTunnelConfig = Annotated[
+    ReverseServerConfig | ReverseClientConfig,
+    Field(discriminator="mode"),
+]
 
 
 class DNSServer(BaseModel):

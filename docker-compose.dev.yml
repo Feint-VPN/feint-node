@@ -10,6 +10,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - sing-box-data:/opt/sing-box
+      - relay-data:/opt/relay
     env_file:
       - .env.local
     environment:
@@ -19,7 +20,25 @@ services:
       - CONFIG_PATH=/opt/sing-box/config.json
       - BACKUP_DIR=/opt/sing-box/backups
       - SINGBOX_CONTAINER_NAME=sing-box
+      - RATHOLE_CONFIG_PATH=/opt/relay/rathole.toml
+      - RATHOLE_STATE_PATH=/opt/relay/state.json
+      - RATHOLE_CONTAINER_NAME=feint-rathole-dev
+
+  rathole:
+    build:
+      context: ./rathole
+      dockerfile: Dockerfile
+    container_name: feint-rathole-dev
+    user: root
+    network_mode: host
+    volumes:
+      - relay-data:/opt/relay
+    environment:
+      - RATHOLE_CONFIG_PATH=/opt/relay/rathole.toml
+    restart: unless-stopped
 
 volumes:
   sing-box-data:
+    driver: local
+  relay-data:
     driver: local

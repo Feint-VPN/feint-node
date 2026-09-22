@@ -9,7 +9,13 @@ from domain.errors import (
     OutboundNotFoundError,
     OutboundUserNotFoundError,
 )
-from domain.models import Hysteria2OutboundConfig, Outbound, RouteRule, SingBoxConfig
+from domain.models import (
+    Hysteria2OutboundConfig,
+    ManagedOutboundConfig,
+    Outbound,
+    RouteRule,
+    SingBoxConfig,
+)
 from domain.mutation import commit_config, serialized_mutation
 from domain.ports import IConfigStore, IContainerRuntime
 
@@ -28,7 +34,7 @@ class OutboundService:
         self._mutation_lock = mutation_lock or asyncio.Lock()
 
     @serialized_mutation
-    async def set(self, outbound_id: str, value: Hysteria2OutboundConfig) -> None:
+    async def set(self, outbound_id: str, value: ManagedOutboundConfig) -> None:
         config = await self._store.load()
         users = {
             user.name
@@ -142,18 +148,21 @@ class OutboundService:
     def _replace_outbound(
         config: SingBoxConfig,
         tag: str,
-        value: Hysteria2OutboundConfig,
+        value: ManagedOutboundConfig,
     ) -> None:
-        data = value.model_dump(
-            exclude={"auth_users", "password", "obfs"},
-            exclude_none=True,
-        )
-        data["password"] = value.password.get_secret_value()
-        if value.obfs:
-            data["obfs"] = {
-                "type": value.obfs.type,
-                "password": value.obfs.password.get_secret_value(),
-            }
+        if isinstance(value, Hysteria2OutboundConfig):
+            data = value.model_dump(
+                exclude={"auth_users", "password", "obfs"},
+                exclude_none=True,
+            )
+            data["password"] = value.password.get_secret_value()
+            if value.obfs:
+                data["obfs"] = {
+                    "type": value.obfs.type,
+                    "password": value.obfs.password.get_secret_value(),
+                }
+        else:
+            data = value.model_dump(exclude={"auth_users"}, exclude_none=True)
         outbound = Outbound(tag=tag, **data)
         for index, current in enumerate(config.outbounds):
             if current.tag == tag:

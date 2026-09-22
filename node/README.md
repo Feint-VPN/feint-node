@@ -16,7 +16,7 @@ operations guide lives in the repository [README](../README.md).
 main.py
   └── api/          FastAPI routers, dependencies and Pydantic schemas
         └── domain/ Local user behavior and infrastructure contracts
-              └── adapters/ sing-box files, Docker, traffic and URL generation
+              └── adapters/ runtime files, Docker, traffic and URL generation
 ```
 
 There is one implementation path. The retired parallel `routers`, `schemas`,
@@ -28,7 +28,7 @@ There is one implementation path. The retired parallel `routers`, `schemas`,
 | --- | --- |
 | `src/api` | HTTP routes, authentication dependencies and request/response schemas. |
 | `src/domain` | Local user lifecycle, protocol mapping, errors and adapter contracts. |
-| `src/adapters` | Atomic configuration storage, Docker runtime, telemetry, traffic and URL building. |
+| `src/adapters` | Atomic configuration storage, Docker runtime, reverse transport, telemetry, traffic and URL building. |
 | `src/utils` | Settings, cryptographic values and structured secret-safe logging. |
 
 ## 🌙 Development
@@ -70,6 +70,7 @@ The public runtime contract is versioned independently through
 - `/user` for one local user and `/users` for paginated reads or idempotent
   provisioning batches of up to 500 users;
 - `/outbound` for shared cascade outbounds and idempotent user assignment;
+- `/reverse` for one encrypted node-to-node reverse link, independent of users;
 - `/stats` for local traffic counters;
 - optional `/sub/{username}` for one-node subscription output.
 

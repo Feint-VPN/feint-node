@@ -31,3 +31,7 @@ class OutboundInUseError(Exception):
 
 class OutboundUserNotFoundError(Exception):
     pass
+
+
+class ReverseTunnelError(Exception):
+    pass

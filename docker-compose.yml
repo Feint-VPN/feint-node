@@ -6,6 +6,7 @@ services:
       - "${API_PORT:-8337}:${API_PORT:-8337}"
     volumes:
       - sing-box-data:/opt/sing-box
+      - relay-data:/opt/relay
       - /var/run/docker.sock:/var/run/docker.sock
       - certbot-certs:/etc/letsencrypt:ro
       - ./.env.local:/opt/vpn-node/.env.local
@@ -22,6 +23,9 @@ services:
       - CLASH_API_URL=${CLASH_API_URL:-http://host.docker.internal:9090}
       - V2RAY_API_ADDRESS=${V2RAY_API_ADDRESS:-host.docker.internal:10085}
       - TRAFFIC_STATE_PATH=/opt/sing-box/traffic.json
+      - RATHOLE_CONFIG_PATH=/opt/relay/rathole.toml
+      - RATHOLE_STATE_PATH=/opt/relay/state.json
+      - RATHOLE_CONTAINER_NAME=${RATHOLE_CONTAINER_NAME:-feint-rathole}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     group_add:
@@ -29,6 +33,7 @@ services:
     restart: unless-stopped
     depends_on:
       - sing-box
+      - rathole
     networks:
       - vpn-network
 
@@ -57,12 +62,25 @@ services:
     entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;"
     restart: unless-stopped
 
+  rathole:
+    image: ${RATHOLE_IMAGE:-ghcr.io/feint-vpn/feint-rathole:v0.5.0-feint.1}
+    container_name: ${RATHOLE_CONTAINER_NAME:-feint-rathole}
+    user: "1000:1000"
+    network_mode: host
+    env_file:
+      - .env.local
+    volumes:
+      - relay-data:/opt/relay
+    restart: unless-stopped
+
 volumes:
   sing-box-data:
     driver: local
   certbot-certs:
     driver: local
   certbot-www:
+    driver: local
+  relay-data:
     driver: local
 
 networks:

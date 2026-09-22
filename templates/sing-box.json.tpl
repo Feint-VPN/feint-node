@@ -80,6 +80,12 @@
       "method": "{{SHADOWSOCKS_METHOD}}",
       "password": "{{SHADOWSOCKS_PASSWORD}}",
       "users": []
+    },
+    {
+      "type": "mixed",
+      "tag": "reverse-exit-in",
+      "listen": "127.0.0.1",
+      "listen_port": {{REVERSE_PROXY_PORT}}
     }
   ],
   "outbounds": [
