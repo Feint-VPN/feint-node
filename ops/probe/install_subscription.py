@@ -12,7 +12,10 @@ from urllib.parse import urlsplit
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--candidates", action="store_true")
+    parser.add_argument("--append", action="store_true")
     args = parser.parse_args()
+    if args.append and not args.candidates:
+        parser.error("--append requires --candidates")
     urls = [line.strip() for line in sys.stdin if line.strip()]
     if not urls or (not args.candidates and len(urls) != 1):
         raise ValueError("Expected a dedicated probe URL")
@@ -24,10 +27,27 @@ def main() -> None:
         for url in urls
     ):
         raise ValueError("Invalid probe URL")
-    target = Path("/etc/feint/probe-candidates.txt" if args.candidates else "/etc/feint/probe.env")
+    target = Path(
+        "/etc/feint/probe-candidates.txt" if args.candidates else "/etc/feint/probe.env"
+    )
     target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=target.parent, delete=False) as output:
-        output.write("\n".join(urls) + "\n" if args.candidates else f"FEINT_PROBE_SUBSCRIPTION_URL={urls[0]}\n")
+    if args.append and target.exists():
+        urls = list(
+            dict.fromkeys(
+                [
+                    *target.read_text(encoding="utf-8").splitlines(),
+                    *urls,
+                ]
+            )
+        )
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", dir=target.parent, delete=False
+    ) as output:
+        output.write(
+            "\n".join(urls) + "\n"
+            if args.candidates
+            else f"FEINT_PROBE_SUBSCRIPTION_URL={urls[0]}\n"
+        )
         pending = output.name
     os.chmod(pending, 0o600)
     os.replace(pending, target)
