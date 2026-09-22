@@ -48,6 +48,20 @@ def _find_user(inbound: Inbound, username: str) -> InboundUser | None:
     return next((u for u in inbound.users if u.name == username), None)
 
 
+def _published_protocols(config: SingBoxConfig, username: str) -> set[str]:
+    routed_outbounds = {
+        rule.outbound
+        for rule in config.route.rules
+        if rule.outbound and username in (rule.auth_user or [])
+    }
+    if any(
+        outbound.tag in routed_outbounds and outbound.type == "socks"
+        for outbound in config.outbounds
+    ):
+        return {"vless"}
+    return set(PROTOCOL_TAGS)
+
+
 def _sync_v2ray_stats_users(config: SingBoxConfig) -> None:
     users = sorted(
         {
@@ -265,8 +279,11 @@ class UserService:
     async def get_user_configs(self, username: str, domain: str) -> dict:
         config = await self._store.load()
         by_proto: dict[str, tuple] = {}  # proto -> (user, inbound)
+        published_protocols = _published_protocols(config, username)
 
         for proto, tag in PROTOCOL_TAGS.items():
+            if proto not in published_protocols:
+                continue
             ib = _find_inbound(config, tag)
             if ib is None:
                 continue
