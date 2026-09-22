@@ -26,6 +26,7 @@ def get_container_runtime() -> IContainerRuntime:
                             "XRAY_CONFIG_PATH", "/opt/sing-box/xray.json"
                         ),
                         container_name=os.getenv("VPN_RUNTIME_CONTAINER_NAME", "xray"),
+                        api_listen=os.getenv("XRAY_API_LISTEN", "0.0.0.0:10085"),
                     )
                 else:
                     container_runtime = DockerRuntime(

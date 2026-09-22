@@ -9,7 +9,11 @@ from typing import Any
 from domain.models import SingBoxConfig
 
 
-def render_xray_config(source: str, destination: str) -> None:
+def render_xray_config(
+    source: str,
+    destination: str,
+    api_listen: str = "0.0.0.0:10085",
+) -> None:
     config = SingBoxConfig.model_validate_json(Path(source).read_text(encoding="utf-8"))
     inbound = next(
         (item for item in config.inbounds if item.tag == "vless-reality-in"), None
@@ -61,7 +65,6 @@ def render_xray_config(source: str, destination: str) -> None:
                     "target": f"{handshake.get('server', server_name)}:{handshake.get('server_port', 443)}",
                     "serverNames": [server_name],
                     "privateKey": private_key,
-                    "minClientVer": "0.0.0",
                     "shortIds": short_ids,
                 },
             },
@@ -154,7 +157,7 @@ def render_xray_config(source: str, destination: str) -> None:
         "log": {"loglevel": config.log.level},
         "api": {
             "tag": "api",
-            "listen": "0.0.0.0:10085",
+            "listen": api_listen,
             "services": ["StatsService"],
         },
         "policy": {
@@ -200,4 +203,8 @@ def render_xray_config(source: str, destination: str) -> None:
 if __name__ == "__main__":
     import sys
 
-    render_xray_config(sys.argv[1], sys.argv[2])
+    render_xray_config(
+        sys.argv[1],
+        sys.argv[2],
+        sys.argv[3] if len(sys.argv) > 3 else "0.0.0.0:10085",
+    )

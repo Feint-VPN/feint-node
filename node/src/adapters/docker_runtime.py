@@ -81,6 +81,7 @@ class XrayDockerRuntime(DockerRuntime):
         xray_config_path: str,
         runtime_config_path: str | None = None,
         container_name: str = "xray",
+        api_listen: str = "0.0.0.0:10085",
         timeout: int = 30,
         client=None,
     ) -> None:
@@ -88,10 +89,14 @@ class XrayDockerRuntime(DockerRuntime):
         self.config_path = config_path
         self.xray_config_path = xray_config_path
         self.runtime_config_path = runtime_config_path or xray_config_path
+        self.api_listen = api_listen
 
     async def reload(self) -> None:
         await asyncio.to_thread(
-            render_xray_config, self.config_path, self.xray_config_path
+            render_xray_config,
+            self.config_path,
+            self.xray_config_path,
+            self.api_listen,
         )
         try:
             container = await asyncio.to_thread(
