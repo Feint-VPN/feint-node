@@ -458,6 +458,7 @@ Runtime values live in `.env.local`. Start from [`.env.example`](.env.example).
 | `VMESS_PORT` | configurable | VMess WebSocket listener. |
 | `TROJAN_PORT` | configurable | Trojan listener. |
 | `HYSTERIA2_PORT` | prefers `443` on a new Xray node | Hysteria2 UDP listener; a free port is selected if UDP `443` is occupied. |
+| `HYSTERIA2_COMPAT_PORT` | empty | Optional second Xray Hysteria2 UDP listener using the same users; keep an old port working after moving `HYSTERIA2_PORT`. |
 | `SHADOWSOCKS_PORT` | configurable | Shadowsocks listener. |
 | `REVERSE_PROXY_PORT` | generated | Loopback-only SOCKS5 exit exposed to the reverse client. |
 | `RATHOLE_PRIVATE_KEY` | generated | Server-side Noise private key. |

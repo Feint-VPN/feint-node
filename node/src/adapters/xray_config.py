@@ -6,7 +6,40 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from domain.models import SingBoxConfig
+from domain.models import Inbound, SingBoxConfig
+
+
+def _hysteria_inbound(inbound: Inbound, *, tag: str, port: int) -> dict[str, Any]:
+    tls = inbound.tls
+    if tls is None or not tls.certificate_path or not tls.key_path:
+        raise ValueError("Xray Hysteria2 TLS settings are incomplete")
+    return {
+        "tag": tag,
+        "listen": "0.0.0.0",
+        "port": port,
+        "protocol": "hysteria",
+        "settings": {
+            "version": 2,
+            "clients": [
+                {"auth": user.password, "email": user.name, "level": 0}
+                for user in inbound.users
+            ],
+        },
+        "streamSettings": {
+            "network": "hysteria",
+            "security": "tls",
+            "tlsSettings": {
+                "alpn": ["h3"],
+                "certificates": [
+                    {
+                        "certificateFile": tls.certificate_path,
+                        "keyFile": tls.key_path,
+                    }
+                ],
+            },
+            "hysteriaSettings": {"version": 2},
+        },
+    }
 
 
 def render_xray_config(
@@ -71,42 +104,29 @@ def render_xray_config(
         }
     ]
     if hysteria is not None:
-        hysteria_tls = hysteria.tls
-        if (
-            hysteria_tls is None
-            or not hysteria_tls.certificate_path
-            or not hysteria_tls.key_path
-        ):
-            raise ValueError("Xray Hysteria2 TLS settings are incomplete")
         inbounds.append(
-            {
-                "tag": hysteria.tag,
-                "listen": "0.0.0.0",
-                "port": hysteria.listen_port,
-                "protocol": "hysteria",
-                "settings": {
-                    "version": 2,
-                    "clients": [
-                        {"auth": user.password, "email": user.name, "level": 0}
-                        for user in hysteria.users
-                    ],
-                },
-                "streamSettings": {
-                    "network": "hysteria",
-                    "security": "tls",
-                    "tlsSettings": {
-                        "alpn": ["h3"],
-                        "certificates": [
-                            {
-                                "certificateFile": hysteria_tls.certificate_path,
-                                "keyFile": hysteria_tls.key_path,
-                            }
-                        ],
-                    },
-                    "hysteriaSettings": {"version": 2},
-                },
-            }
+            _hysteria_inbound(
+                hysteria,
+                tag=hysteria.tag,
+                port=hysteria.listen_port,
+            )
         )
+        compat_port_value = os.getenv("HYSTERIA2_COMPAT_PORT", "").strip()
+        if compat_port_value:
+            try:
+                compat_port = int(compat_port_value)
+            except ValueError as error:
+                raise ValueError("HYSTERIA2_COMPAT_PORT must be an integer") from error
+            if not 1 <= compat_port <= 65535:
+                raise ValueError("HYSTERIA2_COMPAT_PORT must be between 1 and 65535")
+            if compat_port != hysteria.listen_port:
+                inbounds.append(
+                    _hysteria_inbound(
+                        hysteria,
+                        tag=f"{hysteria.tag}-compat",
+                        port=compat_port,
+                    )
+                )
 
     reverse_exit = next(
         (item for item in config.inbounds if item.tag == "reverse-exit-in"), None
