@@ -61,7 +61,8 @@ authenticated `/status` readiness check. A failed rollout restores the previous
 commit, images and runtime configuration.
 
 For the Xray VLESS profile, install with `--runtime xray --template vless`.
-It uses TCP `38519` for VLESS Reality and UDP `443` for Hysteria2, leaving
+It uses TCP `38519` for VLESS Reality and prefers UDP `443` for Hysteria2,
+falling back to a free UDP port when `443` is already occupied, leaving
 TCP `443` available for a web server.
 
 ---

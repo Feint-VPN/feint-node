@@ -317,9 +317,13 @@ fi
 VMESS_PORT=$(port_find_free_unique tcp 10000 60000 "$API_PORT" "$VLESS_PORT") || die "Could not find a free VMess TCP port"
 TROJAN_PORT=$(port_find_free_unique tcp 10000 60000 "$API_PORT" "$VLESS_PORT" "$VMESS_PORT") || die "Could not find a free Trojan TCP port"
 if [[ "$VPN_RUNTIME" == xray && "$NODE_TEMPLATE" == vless ]]; then
-    HY2_PORT=443
-    port_require_available udp "$HY2_PORT" "Hysteria2" \
-        || die "Port ${HY2_PORT}/UDP is required for Hysteria2"
+    if port_is_in_use udp 443; then
+        HY2_PORT=$(port_find_free_unique udp 10000 60000) \
+            || die "Could not find a free Hysteria2 UDP port"
+        warn "Port 443/UDP is occupied; Hysteria2 will use ${HY2_PORT}/UDP"
+    else
+        HY2_PORT=443
+    fi
 else
     HY2_PORT=$(port_find_free_unique udp 10000 60000) || die "Could not find a free Hysteria2 UDP port"
 fi
