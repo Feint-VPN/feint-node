@@ -577,6 +577,7 @@ if [[ "$VPN_RUNTIME" == xray ]]; then
         /opt/sing-box/config.json /opt/sing-box/xray.json </dev/null
     docker run --rm --user 1000:1000 \
         -v "${COMPOSE_SINGBOX_VOL}:/opt/sing-box:ro" \
+        -v "${COMPOSE_CERT_VOL}:/etc/letsencrypt:ro" \
         "$XRAY_IMAGE" run -test -config /opt/sing-box/xray.json \
         || die "Generated Xray config is invalid"
 fi
