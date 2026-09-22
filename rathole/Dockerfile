@@ -1,7 +1,7 @@
 FROM debian:bookworm-slim
 
 ARG RATHOLE_VERSION=0.5.0
-ARG RATHOLE_SHA256=d2202f2aa3a432135bddbe1c6104600c6577cd4507a70e77c08741c7ad879926
+ARG RATHOLE_SHA256=3e7d0d0f365120cd3cd351d147d1a12ee960c8068b464d4dd533a3821873b80e
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl unzip \
