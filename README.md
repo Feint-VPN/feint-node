@@ -402,6 +402,38 @@ Set `PUBLISHED_PROTOCOLS` to a comma-separated allowlist such as
 listeners. An empty value publishes every configured protocol. If the public
 Hysteria2 port is forwarded to a different runtime port, set
 `HYSTERIA2_PUBLIC_PORT` to the client-facing UDP port.
+If a deployed node uses a NAT redirect instead of a native public listener,
+keep that redirect persistent. `scripts/udp_redirect.sh` and the deployment
+example `ops/probe/feint-hysteria2-redirect.service` do this for the current
+RU node's UDP `443 → 36454` mapping. Remove the unit when Xray itself moves
+to UDP `443`.
+
+### Protocol connectivity probes
+
+`scripts/probe_protocols.py` fetches a real Feint subscription, starts an
+isolated Xray client for each listed VLESS or Hysteria2 URI, and checks both
+HTTPS egress and UDP DNS through its local SOCKS interface. It writes a JSON
+report and exits unsuccessfully if a published profile fails either check.
+Candidate URIs supplied with `--candidate-uri-file` are measured without
+affecting the exit status. Use them to observe a disabled protocol before
+considering it for publication. The probe never changes node configuration or
+automatically republishes a protocol.
+
+Run it from a separate host with Docker and a dedicated test subscription:
+
+```bash
+export FEINT_PROBE_SUBSCRIPTION_URL='https://vpn.example.com/userapi/v1/sub/TEST-ACCESS-ID'
+python3 scripts/probe_protocols.py --status-file /var/lib/feint-probe/status.json --vantage external
+```
+
+The sample systemd service and timer are in `ops/probe/`. Install the probe
+script at `/opt/feint-probe/probe_protocols.py` and put the dedicated URL in
+`/etc/feint/probe.env` with mode `0600`. Optional unpublished test URIs go in
+`/etc/feint/probe-candidates.txt`, also mode `0600`. The timer runs every five minutes.
+Check `systemctl status feint-protocol-probe.service` and the JSON report for
+per-profile TCP, UDP, and observed egress IP. A successful datacenter probe
+does not prove access from a residential or mobile network; keep a probe in
+each target access network before using results to change publication policy.
 
 ## 📡 Traffic statistics
 

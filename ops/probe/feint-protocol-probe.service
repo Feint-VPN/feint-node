@@ -1,0 +1,10 @@
+[Unit]
+Description=Feint VPN protocol connectivity probe
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/feint/probe.env
+ExecStart=/usr/bin/python3 /opt/feint-probe/probe_protocols.py --status-file /var/lib/feint-probe/status.json --candidate-uri-file /etc/feint/probe-candidates.txt --vantage ge-datacenter --timeout 8
+TimeoutStartSec=180

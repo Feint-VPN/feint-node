@@ -1,0 +1,13 @@
+[Unit]
+Description=Keep Feint Hysteria2 public UDP 443 forwarded to Xray UDP 36454
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash /opt/vpn-node/scripts/udp_redirect.sh ensure 443 36454
+ExecStop=/bin/bash /opt/vpn-node/scripts/udp_redirect.sh remove 443 36454
+
+[Install]
+WantedBy=multi-user.target
