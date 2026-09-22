@@ -54,6 +54,10 @@ class Settings:
         self.VMESS_PORT: int = int(os.getenv("VMESS_PORT", "80"))
         self.TROJAN_PORT: int = int(os.getenv("TROJAN_PORT", "2053"))
         self.HYSTERIA2_PORT: int = int(os.getenv("HYSTERIA2_PORT", "2083"))
+        hysteria2_public_port = os.getenv("HYSTERIA2_PUBLIC_PORT", "").strip()
+        self.HYSTERIA2_PUBLIC_PORT: int | None = (
+            int(hysteria2_public_port) if hysteria2_public_port else None
+        )
         self.SHADOWSOCKS_PORT: int = int(os.getenv("SHADOWSOCKS_PORT", "8388"))
 
         # Shadowsocks Settings
@@ -96,6 +100,16 @@ class Settings:
         # Default produces:  🌌 Feint | Vless
         self.SUB_URI_TEMPLATE: str = os.getenv(
             "SUB_URI_TEMPLATE", "🌌 Feint | {Protocol}"
+        )
+        published_protocols = os.getenv("PUBLISHED_PROTOCOLS", "").strip()
+        self.PUBLISHED_PROTOCOLS: frozenset[str] | None = (
+            frozenset(
+                protocol.strip().lower()
+                for protocol in published_protocols.split(",")
+                if protocol.strip()
+            )
+            if published_protocols
+            else None
         )
 
         # Logging Settings

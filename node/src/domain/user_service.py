@@ -48,7 +48,11 @@ def _find_user(inbound: Inbound, username: str) -> InboundUser | None:
     return next((u for u in inbound.users if u.name == username), None)
 
 
-def _published_protocols(config: SingBoxConfig, username: str) -> set[str]:
+def _published_protocols(
+    config: SingBoxConfig,
+    username: str,
+    enabled_protocols: frozenset[str] | None,
+) -> set[str]:
     routed_outbounds = {
         rule.outbound
         for rule in config.route.rules
@@ -58,8 +62,12 @@ def _published_protocols(config: SingBoxConfig, username: str) -> set[str]:
         outbound.tag in routed_outbounds and outbound.type == "socks"
         for outbound in config.outbounds
     ):
-        return {"vless"}
-    return set(PROTOCOL_TAGS)
+        supported = {"vless"}
+    else:
+        supported = set(PROTOCOL_TAGS)
+    if enabled_protocols is not None:
+        supported.intersection_update(enabled_protocols)
+    return supported
 
 
 def _sync_v2ray_stats_users(config: SingBoxConfig) -> None:
@@ -92,11 +100,27 @@ class UserService:
         runtime: IContainerRuntime,
         url_builder: IConfigUrlBuilder,
         mutation_lock: asyncio.Lock | None = None,
+        published_protocols: frozenset[str] | None = None,
+        hysteria2_public_port: int | None = None,
     ) -> None:
+        if published_protocols is not None:
+            unknown_protocols = published_protocols - PROTOCOL_TAGS.keys()
+            if unknown_protocols:
+                raise ValueError(
+                    "Unsupported published protocols: "
+                    + ", ".join(sorted(unknown_protocols))
+                )
+        if hysteria2_public_port is not None and not (
+            1 <= hysteria2_public_port <= 65535
+        ):
+            raise ValueError("HYSTERIA2_PUBLIC_PORT must be between 1 and 65535")
+
         self._store = store
         self._runtime = runtime
         self._url_builder = url_builder
         self._mutation_lock = mutation_lock or asyncio.Lock()
+        self._published_protocols = published_protocols
+        self._hysteria2_public_port = hysteria2_public_port
 
     @serialized_mutation
     async def create_user(
@@ -279,19 +303,24 @@ class UserService:
     async def get_user_configs(self, username: str, domain: str) -> dict:
         config = await self._store.load()
         by_proto: dict[str, tuple] = {}  # proto -> (user, inbound)
-        published_protocols = _published_protocols(config, username)
+        published_protocols = _published_protocols(
+            config,
+            username,
+            self._published_protocols,
+        )
+        user_exists = False
 
         for proto, tag in PROTOCOL_TAGS.items():
-            if proto not in published_protocols:
-                continue
             ib = _find_inbound(config, tag)
             if ib is None:
                 continue
             user = _find_user(ib, username)
             if user:
-                by_proto[proto] = (user, ib)
+                user_exists = True
+                if proto in published_protocols:
+                    by_proto[proto] = (user, ib)
 
-        if not by_proto:
+        if not user_exists:
             raise UserNotFoundError(f"User '{username}' not found")
 
         configs: dict[str, dict | None] = {
@@ -338,13 +367,14 @@ class UserService:
 
         if "hysteria2" in by_proto:
             user, ib = by_proto["hysteria2"]
+            public_port = self._hysteria2_public_port or ib.listen_port
             url = self._url_builder.hysteria2_url(
-                user.password or "", domain, ib.listen_port
+                user.password or "", domain, public_port
             )
             configs["hysteria2"] = {
                 "protocol": "hysteria2",
                 "config_url": url,
-                "port": ib.listen_port,
+                "port": public_port,
             }
 
         if "shadowsocks" in by_proto:

@@ -26,5 +26,7 @@ def get_user_service() -> UserService:
                         settings.REALITY_SERVER_NAME,
                     ),
                     mutation_lock=get_mutation_lock(),
+                    published_protocols=settings.PUBLISHED_PROTOCOLS,
+                    hysteria2_public_port=settings.HYSTERIA2_PUBLIC_PORT,
                 )
     return user_service

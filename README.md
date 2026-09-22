@@ -397,6 +397,12 @@ Labels use `SUB_URI_TEMPLATE` with these placeholders:
 VMess stores the label inside its encoded `ps` field. Other protocols use a
 URL fragment.
 
+Set `PUBLISHED_PROTOCOLS` to a comma-separated allowlist such as
+`hysteria2,vless` to hide unhealthy protocols without stopping their runtime
+listeners. An empty value publishes every configured protocol. If the public
+Hysteria2 port is forwarded to a different runtime port, set
+`HYSTERIA2_PUBLIC_PORT` to the client-facing UDP port.
+
 ## 📡 Traffic statistics
 
 `TrafficTracker` polls the sing-box V2Ray statistics API, accumulates counters
@@ -445,6 +451,7 @@ Runtime values live in `.env.local`. Start from [`.env.example`](.env.example).
 | `SERVER_DOMAIN` | `example.com` | Public host used in generated URLs. |
 | `SUBSCRIPTION_ENABLED` | `false` | Enable `/sub/{username}`. |
 | `SUB_URI_TEMPLATE` | `🌌 Feint \| {Protocol}` | Display label for generated URIs. |
+| `PUBLISHED_PROTOCOLS` | empty | Optional comma-separated allowlist for generated connection URLs; empty publishes every configured protocol. |
 | `NODE_IMAGE` | `ghcr.io/feint-vpn/feint-node:latest` | Published node API image. |
 | `SINGBOX_IMAGE` | `ghcr.io/feint-vpn/feint-sing-box:v1.13.19-feint.1` | Feint sing-box runtime image. |
 | `XRAY_IMAGE` | `ghcr.io/xtls/xray-core:26.7.28` | Official Xray runtime image. |
@@ -459,6 +466,7 @@ Runtime values live in `.env.local`. Start from [`.env.example`](.env.example).
 | `TROJAN_PORT` | configurable | Trojan listener. |
 | `HYSTERIA2_PORT` | prefers `443` on a new Xray node | Hysteria2 UDP listener; a free port is selected if UDP `443` is occupied. |
 | `HYSTERIA2_COMPAT_PORT` | empty | Optional second Xray Hysteria2 UDP listener using the same users; keep an old port working after moving `HYSTERIA2_PORT`. |
+| `HYSTERIA2_PUBLIC_PORT` | empty | Optional client-facing UDP port used in generated Hysteria2 URLs without changing the runtime listener. |
 | `SHADOWSOCKS_PORT` | configurable | Shadowsocks listener. |
 | `REVERSE_PROXY_PORT` | generated | Loopback-only SOCKS5 exit exposed to the reverse client. |
 | `RATHOLE_PRIVATE_KEY` | generated | Server-side Noise private key. |
