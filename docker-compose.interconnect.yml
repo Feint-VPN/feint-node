@@ -1,0 +1,19 @@
+services:
+  feint-interconnect:
+    image: ${INTERCONNECT_IMAGE:-ghcr.io/feint-vpn/feint-sing-box:v1.13.19-feint.1}
+    network_mode: host
+    volumes:
+      - ./interconnect.json:/etc/feint/interconnect.json:ro
+      - sing-box-data:/opt/sing-box:ro
+    command: run -c /etc/feint/interconnect.json
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+volumes:
+  sing-box-data:
+    external: true
+    name: ${INTERCONNECT_NODE_VOLUME:?Main node data volume is required}

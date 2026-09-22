@@ -408,6 +408,49 @@ example `ops/probe/feint-hysteria2-redirect.service` do this for the current
 RU node's UDP `443 → 36454` mapping. Remove the unit when Xray itself moves
 to UDP `443`.
 
+### Private RU → GE interconnect (optional)
+
+`docker-compose.interconnect.yml` runs an independent sing-box process. It does
+not replace or restart the node's Xray, rathole, or API containers. The exit
+listens **only on its Tailscale IPv4 address** and requires SOCKS credentials;
+the entry listens only on `127.0.0.1`. Entry-side UDP is carried over the
+authenticated TCP connection using sing-box UDP-over-TCP v2. No SOCKS port is
+published through Docker. Both nodes must have Tailscale running, the same
+dedicated credential in a root-only file, and distinct unused ports. The
+credential must not be placed in `.env.local` or on the command line.
+Create it once with `sudo sh -c 'umask 077; openssl rand -base64 48 > /root/feint-interconnect-password'`
+and transfer the same file to the other node over the existing private SSH connection.
+
+On the GE exit, from the installed repository directory:
+
+```bash
+sudo python3 scripts/configure_interconnect.py exit \
+  --tailscale-address "$(tailscale ip -4)" --port 39085 \
+  --username feint-interconnect \
+  --password-file /root/feint-interconnect-password
+bash scripts/interconnect.sh up -d
+```
+
+On the RU entry, use the **GE** Tailscale address and the same credential:
+
+```bash
+sudo python3 scripts/configure_interconnect.py entry \
+  --tailscale-address GE_TAILSCALE_IP --port 39085 --local-port 39083 \
+  --username feint-interconnect \
+  --password-file /root/feint-interconnect-password
+bash scripts/interconnect.sh up -d
+```
+
+The exit reuses the installed RU GeoIP rule set and rejects private and RU
+destinations, matching the node's existing exit policy. The entry's local port
+is the `server_port` for a managed SOCKS outbound on the RU node. Starting
+these containers alone does not move any user traffic; the SDK must explicitly
+assign users to that outbound. Keep the existing route until an isolated
+acceptance check confirms both TCP and UDP egress through GE. Stop just this
+optional component with `bash scripts/interconnect.sh stop`. It runs as a
+separate Compose project, so a normal `update.sh` does not remove it as an
+orphan. The script resolves the node's existing data volume for the GeoIP file.
+
 ### Protocol connectivity probes
 
 `scripts/probe_protocols.py` fetches a real Feint subscription, starts an
