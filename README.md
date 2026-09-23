@@ -454,6 +454,13 @@ optional component with `bash scripts/interconnect.sh stop`. It runs as a
 separate Compose project, so a normal `update.sh` does not remove it as an
 orphan. The script resolves the node's existing data volume for the GeoIP file.
 
+For an existing managed SOCKS route, take a node-config backup before changing
+its loopback port. Copy `scripts/switch_interconnect_route.py` into the node API
+container and run it first with `--expected-port OLD_PORT --new-port NEW_PORT`
+to inspect the change. Add `--apply` only after the new listener passes TCP and
+UDP checks. The same command with the ports reversed is the rollback; it
+preserves the route's current user set.
+
 ### Protocol connectivity probes
 
 `scripts/probe_protocols.py` fetches a real Feint subscription, starts an
