@@ -1,0 +1,27 @@
+{
+  "log": {"level": "warn"},
+  "inbounds": [
+    {
+      "type": "socks",
+      "tag": "accept-in",
+      "listen": "127.0.0.1",
+      "listen_port": 39093
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "hysteria2",
+      "tag": "to-ru",
+      "server": "127.0.0.1",
+      "server_port": 39092,
+      "password": "feint-local-hy2-acceptance",
+      "tls": {
+        "enabled": true,
+        "server_name": "localhost",
+        "insecure": true,
+        "alpn": ["h3"]
+      }
+    }
+  ],
+  "route": {"final": "to-ru"}
+}

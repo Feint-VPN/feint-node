@@ -49,8 +49,10 @@ def recv_exact(connection: socket.socket, size: int) -> bytes:
     return output
 
 
-def socks_request(command: int) -> tuple[socket.socket, str, int]:
-    connection = socket.create_connection(("127.0.0.1", 39083), timeout=5)
+def socks_request(
+    command: int, listen_port: int = 39083
+) -> tuple[socket.socket, str, int]:
+    connection = socket.create_connection(("127.0.0.1", listen_port), timeout=5)
     connection.settimeout(5)
     connection.sendall(b"\x05\x01\x00")
     assert recv_exact(connection, 2) == b"\x05\x00"
@@ -92,6 +94,45 @@ def check_traffic() -> None:
         result, _ = udp.recvfrom(4096)
         assert result.endswith(b"feint-udp"), result.hex()
     print("TCP and UDP reached the exit through authenticated SOCKS/UoT")
+
+
+def check_public_udp(listen_port: int = 39083) -> None:
+    """Confirm a DNS packet crosses the real interconnect and returns."""
+    control, address, port = socks_request(3, listen_port)
+    request_id = b"\x4f\x12"
+    query = request_id + b"\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00"
+    query += b"\x07example\x03com\x00\x00\x01\x00\x01"
+    packet = b"\x00\x00\x00\x01" + socket.inet_aton("1.1.1.1")
+    packet += struct.pack("!H", 53) + query
+    with control, socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp:
+        udp.settimeout(10)
+        udp.sendto(packet, ("127.0.0.1" if address == "0.0.0.0" else address, port))
+        response, _ = udp.recvfrom(4096)
+    assert response[:4] == b"\x00\x00\x00\x01", response[:4].hex()
+    dns = response[10:]
+    assert dns[:2] == request_id and dns[2] & 0x80, dns[:4].hex()
+    print("UDP DNS response returned through RU -> GE")
+
+
+def check_auth(exit_host: str) -> None:
+    with socket.create_connection((exit_host, 39085), timeout=5) as connection:
+        connection.sendall(b"\x05\x01\x00")
+        assert recv_exact(connection, 2) == b"\x05\xff"
+
+
+def allow_speed_sink(path: Path, address: str, port: int) -> None:
+    """Allow one private test target in a temporary exit configuration."""
+    config = json.loads(path.read_text(encoding="utf-8"))
+    config["route"]["rules"].insert(
+        0,
+        {
+            "ip_cidr": [f"{address}/32"],
+            "port": port,
+            "action": "route",
+            "outbound": "direct",
+        },
+    )
+    path.write_text(json.dumps(config), encoding="utf-8")
 
 
 def run() -> None:
@@ -214,6 +255,19 @@ def run() -> None:
                             subprocess.run(["docker", "logs", name], check=False)
                         raise
                     time.sleep(1)
+            docker(
+                "run",
+                "--rm",
+                "--network",
+                f"container:{entry}",
+                "--mount",
+                f"type=bind,src={Path(__file__).resolve()},dst=/acceptance.py,readonly",
+                PYTHON_IMAGE,
+                "python",
+                "/acceptance.py",
+                "check-auth",
+                exit_node,
+            )
         finally:
             for name in containers:
                 subprocess.run(
@@ -227,5 +281,11 @@ if __name__ == "__main__":
         serve()
     elif len(sys.argv) == 2 and sys.argv[1] == "check":
         check_traffic()
+    elif len(sys.argv) in (2, 3) and sys.argv[1] == "check-public-udp":
+        check_public_udp(int(sys.argv[2]) if len(sys.argv) == 3 else 39083)
+    elif len(sys.argv) == 5 and sys.argv[1] == "allow-speed-sink":
+        allow_speed_sink(Path(sys.argv[2]), sys.argv[3], int(sys.argv[4]))
+    elif len(sys.argv) == 3 and sys.argv[1] == "check-auth":
+        check_auth(sys.argv[2])
     else:
         run()

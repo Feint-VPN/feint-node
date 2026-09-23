@@ -62,7 +62,7 @@ def _published_protocols(
         outbound.tag in routed_outbounds and outbound.type == "socks"
         for outbound in config.outbounds
     ):
-        supported = {"vless"}
+        supported = {"vless", "hysteria2"}
     else:
         supported = set(PROTOCOL_TAGS)
     if enabled_protocols is not None:

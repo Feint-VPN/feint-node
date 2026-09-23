@@ -420,6 +420,9 @@ dedicated credential in a root-only file, and distinct unused ports. The
 credential must not be placed in `.env.local` or on the command line.
 Create it once with `sudo sh -c 'umask 077; openssl rand -base64 48 > /root/feint-interconnect-password'`
 and transfer the same file to the other node over the existing private SSH connection.
+After copying, run `sudo chmod 600 /root/feint-interconnect-password` on both
+nodes; `scp` may create the destination with group/world-readable permissions,
+which the configurator deliberately rejects.
 
 On the GE exit, from the installed repository directory:
 

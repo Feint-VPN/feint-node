@@ -1,0 +1,19 @@
+{
+  "log": {"loglevel": "warning"},
+  "inbounds": [
+    {
+      "tag": "accept-in",
+      "listen": "127.0.0.1",
+      "port": 39091,
+      "protocol": "socks",
+      "settings": {"auth": "noauth", "udp": true}
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "to-ge",
+      "protocol": "socks",
+      "settings": {"servers": [{"address": "127.0.0.1", "port": 39083}]}
+    }
+  ]
+}

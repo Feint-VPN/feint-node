@@ -1,0 +1,38 @@
+{
+  "log": {"loglevel": "warning"},
+  "inbounds": [
+    {
+      "tag": "hy2-accept-in",
+      "listen": "127.0.0.1",
+      "port": 39092,
+      "protocol": "hysteria",
+      "settings": {
+        "version": 2,
+        "clients": [
+          {"auth": "feint-local-hy2-acceptance", "email": "hy2-accept", "level": 0}
+        ]
+      },
+      "streamSettings": {
+        "network": "hysteria",
+        "security": "tls",
+        "tlsSettings": {
+          "alpn": ["h3"],
+          "certificates": [
+            {
+              "certificateFile": "/etc/feint-accept/hy2.crt",
+              "keyFile": "/etc/feint-accept/hy2.key"
+            }
+          ]
+        },
+        "hysteriaSettings": {"version": 2}
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "to-ge",
+      "protocol": "socks",
+      "settings": {"servers": [{"address": "127.0.0.1", "port": 39083}]}
+    }
+  ]
+}
