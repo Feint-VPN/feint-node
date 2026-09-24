@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import socket
 import struct
 import subprocess
@@ -13,7 +14,9 @@ import time
 import uuid
 from pathlib import Path
 
-IMAGE = "ghcr.io/feint-vpn/feint-sing-box:v1.13.19-feint.1"
+IMAGE = os.environ.get(
+    "SINGBOX_IMAGE", "ghcr.io/feint-vpn/feint-sing-box:v1.13.19-feint.1"
+)
 PYTHON_IMAGE = "python:3.11-slim"
 
 
@@ -111,7 +114,7 @@ def check_public_udp(listen_port: int = 39083) -> None:
     assert response[:4] == b"\x00\x00\x00\x01", response[:4].hex()
     dns = response[10:]
     assert dns[:2] == request_id and dns[2] & 0x80, dns[:4].hex()
-    print("UDP DNS response returned through RU -> GE")
+    print("UDP DNS response returned through the selected SOCKS client")
 
 
 def check_auth(exit_host: str) -> None:

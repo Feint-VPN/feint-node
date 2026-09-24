@@ -91,8 +91,9 @@ rollback() {
     restore_image "$OLD_CERTBOT_IMAGE" "$CERTBOT_IMAGE"
     "${COMPOSE[@]}" up -d --no-build --remove-orphans
     "${COMPOSE[@]}" cp "$CONFIG_BACKUP" "vpn-node-api:$CONFIG_PATH"
+    "${COMPOSE[@]}" cp "$RULESET_BACKUP" "vpn-node-api:/opt/sing-box/geoip-ru.srs"
     "${COMPOSE[@]}" exec -T --user root vpn-node-api sh -c \
-        "chown 1000:1000 '$CONFIG_PATH' && chmod 600 '$CONFIG_PATH'" </dev/null
+        "chown 1000:1000 '$CONFIG_PATH' && chmod 600 '$CONFIG_PATH' && chmod 644 /opt/sing-box/geoip-ru.srs" </dev/null
     prepare_runtime_config
     "${COMPOSE[@]}" restart sing-box
     if wait_for_status; then
@@ -118,6 +119,7 @@ sync_template() {
         --header 'Accept: application/vnd.github.raw+json' \
         'https://api.github.com/repos/SagerNet/sing-geoip/contents/geoip-ru.srs?ref=rule-set' \
         --output "$ruleset"
+    chmod 644 "$ruleset"
     "${COMPOSE[@]}" cp "$INSTALL_DIR/scripts/sync-singbox.py" "vpn-node-api:$helper"
     "${COMPOSE[@]}" cp "$template_path" "vpn-node-api:$template"
     "${COMPOSE[@]}" cp "$ruleset" "vpn-node-api:/opt/sing-box/geoip-ru.srs"
@@ -166,9 +168,12 @@ fi
 
 ENV_BACKUP="$(mktemp "${ENV_FILE}.update.XXXXXX")"
 CONFIG_BACKUP="$(mktemp "${ENV_FILE}.config.XXXXXX")"
+RULESET_BACKUP="$(mktemp "${ENV_FILE}.ruleset.XXXXXX")"
 cp "$ENV_FILE" "$ENV_BACKUP"
 "${COMPOSE[@]}" exec -T vpn-node-api cat \
     "$CONFIG_PATH" > "$CONFIG_BACKUP"
+"${COMPOSE[@]}" exec -T vpn-node-api cat \
+    /opt/sing-box/geoip-ru.srs > "$RULESET_BACKUP"
 
 NODE_IMAGE="$(env_get NODE_IMAGE "$ENV_FILE" ghcr.io/feint-vpn/feint-node:latest)"
 SINGBOX_IMAGE="$(env_get SINGBOX_IMAGE "$ENV_FILE" ghcr.io/feint-vpn/feint-sing-box:v1.13.19-feint.2)"
@@ -284,5 +289,5 @@ info "Waiting for node readiness"
 wait_for_status
 
 trap - ERR
-rm -f "$ENV_BACKUP" "$CONFIG_BACKUP"
+rm -f "$ENV_BACKUP" "$CONFIG_BACKUP" "$RULESET_BACKUP"
 success "Update complete ($(git rev-parse --short HEAD))"

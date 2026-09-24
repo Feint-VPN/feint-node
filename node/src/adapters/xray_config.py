@@ -103,6 +103,11 @@ def render_xray_config(
             },
         }
     ]
+    min_client_version = os.getenv("XRAY_REALITY_MIN_CLIENT_VERSION", "").strip()
+    if min_client_version:
+        inbounds[0]["streamSettings"]["realitySettings"]["minClientVer"] = (
+            min_client_version
+        )
     if hysteria is not None:
         inbounds.append(
             _hysteria_inbound(

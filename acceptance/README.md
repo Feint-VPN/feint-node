@@ -22,6 +22,13 @@ It does not change host SSH, firewall, Tailscale or unrelated containers.
 Public probes use HTTPS `example.com` and UDP DNS `1.1.1.1`; these do not measure
 subscriber reachability, Discord voice quality or sustained throughput.
 
+Set `SINGBOX_IMAGE` to the candidate sing-box image when testing runtime changes;
+otherwise the last stable image is used. In pipeline targets this is `singbox_image`.
+`--core` selects a server runtime. `--vless-client xray` explicitly tests native
+Xray VLESS clients; it does not establish sing-box client compatibility.
+For the opt-in compatibility mode, use `--core xray --reality-min-client-version 1.8.1`
+with the default sing-box client. Also run the native Xray case with an empty override.
+
 Use the workspace pipeline `server-test node --target NAME` with an explicitly
 configured `scenario = "runtime"` and published `image`. Logs and failures belong
 to pipeline's ignored `.state`, not Git. Prefer an immutable image digest.

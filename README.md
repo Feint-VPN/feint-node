@@ -90,7 +90,7 @@ may change independently of the node API.
 
 ## 🌙 Installation
 
-Use the native Xray-core runtime for a VLESS Reality-only node:
+Use the native Xray-core runtime for a VLESS REALITY + Hysteria2 node:
 
 ```bash
 bash install.sh \
@@ -104,6 +104,18 @@ bash install.sh \
 traffic-statistics and SOCKS outbound contracts. This allows a VLESS Reality
 entry node to route selected users through an encrypted reverse transport
 without changing their credentials.
+
+Xray 26.7.28 defaults to a REALITY minimum client version of `26.3.27`.
+sing-box 1.13.19 identifies its REALITY client as `1.8.1`, so the default rejects it.
+For an explicitly selected compatibility deployment, set
+`XRAY_REALITY_MIN_CLIENT_VERSION=1.8.1` in `.env.local`, then run `update.sh`.
+For a new installation, pass it in the installer's environment. Empty keeps
+Xray's upstream default. This changes only the version gate, not keys or UUIDs.
+**Tradeoff:** Xray warns that lowering this threshold increases blocking risk;
+it is not equivalent to the upstream anti-probing policy. Compatibility with
+one tested core does not establish compatibility with every GUI client.
+See the [Xray version gate](https://github.com/XTLS/Xray-core/blob/v26.7.28/infra/conf/transport_security.go)
+and [sing-box client version](https://github.com/SagerNet/sing-box/blob/v1.13.19/common/tls/reality_client.go).
 
 The installer prepares Docker, validates ports, obtains the TLS certificate,
 generates secrets and starts the node:
@@ -540,6 +552,7 @@ Runtime values live in `.env.local`. Start from [`.env.example`](.env.example).
 | `NODE_IMAGE` | `ghcr.io/feint-vpn/feint-node:latest` | Published node API image. |
 | `SINGBOX_IMAGE` | `ghcr.io/feint-vpn/feint-sing-box:v1.13.19-feint.2` | Feint sing-box runtime image; non-main installs use the branch image. |
 | `XRAY_IMAGE` | `ghcr.io/xtls/xray-core:26.7.28` | Official Xray runtime image. |
+| `XRAY_REALITY_MIN_CLIENT_VERSION` | empty | Optional REALITY version threshold; `1.8.1` permits the tested sing-box client, with the security tradeoff described above. |
 | `RATHOLE_IMAGE` | `ghcr.io/feint-vpn/feint-rathole:v0.5.0-feint.1` | Pinned reverse-transport sidecar. |
 | `VPN_RUNTIME` | `sing-box` | Selected VPN core: `sing-box` or `xray`. |
 | `VLESS_PORT` | `443` | VLESS Vision REALITY listener. |

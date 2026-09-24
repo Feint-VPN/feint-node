@@ -24,7 +24,9 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from interconnect import check_public_udp
 
 ROOT = Path(__file__).resolve().parents[1]
-SINGBOX = "ghcr.io/feint-vpn/feint-sing-box:v1.13.19-feint.1"
+SINGBOX = os.environ.get(
+    "SINGBOX_IMAGE", "ghcr.io/feint-vpn/feint-sing-box:v1.13.19-feint.1"
+)
 XRAY = "ghcr.io/xtls/xray-core:26.7.28"
 
 
@@ -94,7 +96,9 @@ def client_outbound(uri: str) -> dict:
     return result | {"tls": tls}
 
 
-def exercise(image: str, core: str, vless_client: str) -> None:
+def exercise(
+    image: str, core: str, vless_client: str, min_client_version: str = ""
+) -> None:
     name = f"feint-acceptance-{uuid.uuid4().hex[:8]}"
     client_name = f"{name}-client"
     runtime_name = f"{name}-runtime"
@@ -216,6 +220,8 @@ def exercise(image: str, core: str, vless_client: str) -> None:
                 "--rm",
                 "--user",
                 "0",
+                "-e",
+                f"XRAY_REALITY_MIN_CLIENT_VERSION={min_client_version}",
                 "-v",
                 mount,
                 "--entrypoint",
@@ -236,6 +242,7 @@ def exercise(image: str, core: str, vless_client: str) -> None:
             "CONFIG_PATH": "/state/config.json",
             "BACKUP_DIR": "/state/backups",
             "VPN_RUNTIME": core,
+            "XRAY_REALITY_MIN_CLIENT_VERSION": min_client_version,
             "VPN_RUNTIME_CONTAINER_NAME": runtime_name,
             "SINGBOX_CONTAINER_NAME": runtime_name,
             "XRAY_CONFIG_PATH": "/state/xray.json",
@@ -526,8 +533,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--vless-client", choices=["sing-box", "xray"], default="sing-box"
     )
+    parser.add_argument("--reality-min-client-version", default="")
     args = parser.parse_args()
     if os.name != "posix":
         raise SystemExit("Run on the explicitly selected Linux test host")
     for runtime in ["sing-box", "xray"] if args.core == "both" else [args.core]:
-        exercise(args.image, runtime, args.vless_client)
+        exercise(
+            args.image, runtime, args.vless_client, args.reality_min_client_version
+        )
