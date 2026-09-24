@@ -47,7 +47,7 @@ SUB_ENABLED="true"
 BRANCH="main"
 NODE_IMAGE="${NODE_IMAGE:-ghcr.io/feint-vpn/feint-node:latest}"
 SINGBOX_IMAGE="${SINGBOX_IMAGE:-ghcr.io/feint-vpn/feint-sing-box:v1.13.19-feint.2}"
-XRAY_IMAGE="${XRAY_IMAGE:-ghcr.io/xtls/xray-core:26.7.28}"
+XRAY_IMAGE="${XRAY_IMAGE:-ghcr.io/feint-vpn/feint-xray:v26.7.28-feint.1}"
 RATHOLE_IMAGE="${RATHOLE_IMAGE:-ghcr.io/feint-vpn/feint-rathole:v0.5.0-feint.1}"
 VPN_RUNTIME="sing-box"
 NEW_SSH_PORT=""
@@ -90,6 +90,7 @@ done
 if [[ "$BRANCH" != main ]]; then
     NODE_IMAGE="ghcr.io/feint-vpn/feint-node:${BRANCH//\//-}"
     SINGBOX_IMAGE="ghcr.io/feint-vpn/feint-sing-box:${BRANCH//\//-}"
+    XRAY_IMAGE="ghcr.io/feint-vpn/feint-xray:${BRANCH//\//-}"
 fi
 
 [[ -z "$DOMAIN" ]] && die "--domain is required"

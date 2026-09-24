@@ -95,3 +95,23 @@ jobs:
           labels: ${{ steps.rathole-metadata.outputs.labels }}
           cache-from: type=gha,scope=rathole
           cache-to: type=gha,mode=max,scope=rathole
+
+      - name: Generate Xray image metadata
+        id: xray-metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/feint-vpn/feint-xray
+          tags: |
+            type=raw,value=v26.7.28-feint.1,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=sha,prefix=sha-
+
+      - name: Package official Xray binary with low-port capability
+        uses: docker/build-push-action@v6
+        with:
+          context: ./xray
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.xray-metadata.outputs.tags }}
+          labels: ${{ steps.xray-metadata.outputs.labels }}
+          cache-from: type=gha,scope=xray
+          cache-to: type=gha,mode=max,scope=xray

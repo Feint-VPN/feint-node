@@ -177,7 +177,12 @@ cp "$ENV_FILE" "$ENV_BACKUP"
 
 NODE_IMAGE="$(env_get NODE_IMAGE "$ENV_FILE" ghcr.io/feint-vpn/feint-node:latest)"
 SINGBOX_IMAGE="$(env_get SINGBOX_IMAGE "$ENV_FILE" ghcr.io/feint-vpn/feint-sing-box:v1.13.19-feint.2)"
-XRAY_IMAGE="$(env_get XRAY_IMAGE "$ENV_FILE" ghcr.io/xtls/xray-core:26.7.28)"
+XRAY_IMAGE="$(env_get XRAY_IMAGE "$ENV_FILE" ghcr.io/feint-vpn/feint-xray:v26.7.28-feint.1)"
+if [[ "$VPN_RUNTIME" == xray && "$XRAY_IMAGE" == ghcr.io/xtls/xray-core:26.7.28 ]]; then
+    XRAY_IMAGE=ghcr.io/feint-vpn/feint-xray:v26.7.28-feint.1
+    [[ "$BRANCH" == main ]] || XRAY_IMAGE="ghcr.io/feint-vpn/feint-xray:${BRANCH//\//-}"
+    env_set XRAY_IMAGE "$XRAY_IMAGE" "$ENV_FILE"
+fi
 RATHOLE_IMAGE="$(env_get RATHOLE_IMAGE "$ENV_FILE" ghcr.io/feint-vpn/feint-rathole:v0.5.0-feint.1)"
 env_set RATHOLE_IMAGE "$RATHOLE_IMAGE" "$ENV_FILE"
 if [[ "$VPN_RUNTIME" == sing-box && ( "$SINGBOX_IMAGE" == ghcr.io/feint-vpn/feint-sing-box:v1.13.12-feint.1 || "$SINGBOX_IMAGE" == ghcr.io/feint-vpn/feint-sing-box:v1.13.19-feint.1 ) ]]; then

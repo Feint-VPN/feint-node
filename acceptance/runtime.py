@@ -28,6 +28,7 @@ SINGBOX = os.environ.get(
     "SINGBOX_IMAGE", "ghcr.io/feint-vpn/feint-sing-box:v1.13.19-feint.1"
 )
 XRAY = "ghcr.io/xtls/xray-core:26.7.28"
+XRAY_SERVER = os.environ.get("XRAY_IMAGE", XRAY)
 
 
 def run(*args: str, timeout: int = 180) -> str:
@@ -261,7 +262,7 @@ def exercise(
             "name": name,
             "services": {
                 "sing-box": {
-                    "image": SINGBOX if core == "sing-box" else XRAY,
+                    "image": SINGBOX if core == "sing-box" else XRAY_SERVER,
                     "container_name": runtime_name,
                     "user": "1000:1000",
                     "volumes": [mount],

@@ -551,7 +551,7 @@ Runtime values live in `.env.local`. Start from [`.env.example`](.env.example).
 | `PUBLISHED_PROTOCOLS` | empty | Optional comma-separated allowlist for generated connection URLs; empty publishes every configured protocol. |
 | `NODE_IMAGE` | `ghcr.io/feint-vpn/feint-node:latest` | Published node API image. |
 | `SINGBOX_IMAGE` | `ghcr.io/feint-vpn/feint-sing-box:v1.13.19-feint.2` | Feint sing-box runtime image; non-main installs use the branch image. |
-| `XRAY_IMAGE` | `ghcr.io/xtls/xray-core:26.7.28` | Official Xray runtime image. |
+| `XRAY_IMAGE` | `ghcr.io/feint-vpn/feint-xray:v26.7.28-feint.1` | Unmodified official Xray binary/assets, packaged with `NET_BIND_SERVICE` on the binary so UID 1000 can bind UDP/TCP 443. No host sysctl change or root runtime. |
 | `XRAY_REALITY_MIN_CLIENT_VERSION` | empty | Optional REALITY version threshold; `1.8.1` permits the tested sing-box client, with the security tradeoff described above. |
 | `RATHOLE_IMAGE` | `ghcr.io/feint-vpn/feint-rathole:v0.5.0-feint.1` | Pinned reverse-transport sidecar. |
 | `VPN_RUNTIME` | `sing-box` | Selected VPN core: `sing-box` or `xray`. |
