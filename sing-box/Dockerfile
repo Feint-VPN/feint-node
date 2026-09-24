@@ -28,9 +28,10 @@ FROM alpine:3.21
 
 LABEL org.opencontainers.image.source="https://github.com/Feint-VPN/feint-node"
 
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata libcap
 
 COPY --from=builder /out/sing-box /usr/local/bin/sing-box
+RUN setcap cap_net_bind_service=+ep /usr/local/bin/sing-box
 
 ENTRYPOINT ["sing-box"]
 CMD ["run", "-c", "/opt/sing-box/config.json"]

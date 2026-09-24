@@ -538,7 +538,7 @@ Runtime values live in `.env.local`. Start from [`.env.example`](.env.example).
 | `SUB_URI_TEMPLATE` | `🌌 Feint \| {Protocol}` | Display label for generated URIs. |
 | `PUBLISHED_PROTOCOLS` | empty | Optional comma-separated allowlist for generated connection URLs; empty publishes every configured protocol. |
 | `NODE_IMAGE` | `ghcr.io/feint-vpn/feint-node:latest` | Published node API image. |
-| `SINGBOX_IMAGE` | `ghcr.io/feint-vpn/feint-sing-box:v1.13.19-feint.1` | Feint sing-box runtime image. |
+| `SINGBOX_IMAGE` | `ghcr.io/feint-vpn/feint-sing-box:v1.13.19-feint.2` | Feint sing-box runtime image; non-main installs use the branch image. |
 | `XRAY_IMAGE` | `ghcr.io/xtls/xray-core:26.7.28` | Official Xray runtime image. |
 | `RATHOLE_IMAGE` | `ghcr.io/feint-vpn/feint-rathole:v0.5.0-feint.1` | Pinned reverse-transport sidecar. |
 | `VPN_RUNTIME` | `sing-box` | Selected VPN core: `sing-box` or `xray`. |
@@ -664,15 +664,9 @@ There is no parallel legacy router or service tree. `api`, `domain` and
 
 ## ✅ Quality
 
-The current contract is checked on Windows and Linux:
-
-- Ruff formatting and linting;
-- unit, integration and property tests;
-- production Docker image build;
-- runtime import without development dependencies;
-- port, installer and updater regression tests.
-
-Current suite: **179 passing, 1 skipped**.
+See [acceptance scenarios and release gates](acceptance/README.md) for actual
+commands and coverage. Lint, local contract checks, live runtime acceptance and
+clean installation/update are separate gates; none implies the others passed.
 
 ## License
 
