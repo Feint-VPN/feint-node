@@ -265,23 +265,6 @@ env_set REALITY_SERVER_NAME \
     "$(env_get REALITY_SERVER_NAME "$ENV_FILE" "$REALITY_SERVER_NAME_DEFAULT")" \
     "$ENV_FILE"
 
-if [[ "$NODE_TEMPLATE" == default && "$(env_get VLESS_PORT "$ENV_FILE")" != 443 ]]; then
-    [[ "$(env_get API_PORT "$ENV_FILE")" != 443 ]] || { error "Port 443 is occupied by the node API"; false; }
-    reserved=(
-        "$(env_get API_PORT "$ENV_FILE")"
-        "$(env_get VLESS_PORT "$ENV_FILE")"
-        "$(env_get VMESS_PORT "$ENV_FILE")"
-        "$(env_get TROJAN_PORT "$ENV_FILE")"
-        "$(env_get HYSTERIA2_PORT "$ENV_FILE")"
-        "$(env_get SHADOWSOCKS_PORT "$ENV_FILE")"
-    )
-    for key in VMESS_PORT TROJAN_PORT SHADOWSOCKS_PORT; do
-        if [[ "$(env_get "$key" "$ENV_FILE")" == 443 ]]; then
-            env_set "$key" "$(port_find_free_unique tcp 10000 60000 "${reserved[@]}")" "$ENV_FILE"
-        fi
-    done
-    env_set VLESS_PORT 443 "$ENV_FILE"
-fi
 chmod 600 "$ENV_FILE"
 
 COMPOSE_RELAY_VOL="$(basename "$INSTALL_DIR")_relay-data"

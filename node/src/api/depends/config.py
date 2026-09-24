@@ -4,6 +4,7 @@ import asyncio
 from threading import Lock
 
 from adapters.singbox_file_store import SingBoxFileStore
+from utils.settings import settings
 
 config_store: SingBoxFileStore | None = None
 mutation_lock: asyncio.Lock | None = None
@@ -15,7 +16,9 @@ def get_config_store() -> SingBoxFileStore:
     if config_store is None:
         with dependency_lock:
             if config_store is None:
-                config_store = SingBoxFileStore()
+                config_store = SingBoxFileStore(
+                    settings.CONFIG_PATH, settings.BACKUP_DIR
+                )
     return config_store
 
 

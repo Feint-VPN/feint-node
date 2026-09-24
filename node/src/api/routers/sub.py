@@ -37,15 +37,11 @@ _PROTO_DISPLAY: dict[str, str] = {
 }
 
 
-def _vmess_set_label(url: str, label: str) -> str:
-    """Inject ``label`` into the VMess JSON ``ps`` field.
-
-    VMess share links are ``vmess://base64(json)`` — the display name must
-    live inside the JSON payload, not as a URI fragment.
-    """
+def _set_label(url: str, label: str) -> str:
+    """VMess keeps its label inside JSON; other protocols use URI fragments."""
     prefix = "vmess://"
     if not url.startswith(prefix):
-        return url
+        return f"{url.split('#', 1)[0]}#{quote(label, safe='')}"
     raw = url[len(prefix) :]
     # base64url → JSON → patch "ps" → base64url
     padded = raw + "=" * (-len(raw) % 4)
@@ -72,26 +68,6 @@ def _require_enabled() -> None:
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Subscription endpoint is disabled on this node",
         )
-
-
-def _apply_fragment(url: str, proto: str, username: str) -> str:
-    """Replace the URI fragment with the configured template label.
-
-    VMess is EXCLUDED — its display name lives inside the base64 JSON (``ps``
-    field) and appending a ``#fragment`` breaks many clients (Hiddify, v2rayN).
-    """
-    if proto == "vmess":
-        return url  # label already baked into the JSON "ps" field
-    display = _PROTO_DISPLAY.get(proto, proto.title())
-    label = settings.SUB_URI_TEMPLATE.format(
-        protocol=proto,
-        Protocol=display,
-        username=username,
-    )
-    # URL-encode so emoji + spaces survive in the URI fragment
-    encoded_label = quote(label, safe="")
-    base = url.split("#", 1)[0]
-    return f"{base}#{encoded_label}"
 
 
 def _build_settings_response() -> SubscriptionSettingsResponse:
@@ -179,12 +155,7 @@ async def get_subscription(
                 Protocol=display,
                 username=username,
             )
-            if proto == "vmess":
-                # VMess label lives inside the base64 JSON "ps" field
-                uri = _vmess_set_label(uri, label)
-            else:
-                uri = _apply_fragment(uri, proto, username)
-            uris.append(uri)
+            uris.append(_set_label(uri, label))
 
     if not uris:
         raise HTTPException(

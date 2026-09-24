@@ -596,28 +596,6 @@ wait_for_runtime "$STATUS_URL" \
     || die "Containers started, but configuration or VPN runtime is unavailable"
 success "Node runtime is ready"
 
-# ── MTU TCPMSS clamp (fix for providers with reduced path MTU) ────────────────
-info "Applying MTU TCPMSS clamp for NAT forwarding..."
-_NIC=$(ip route get 8.8.8.8 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}' | head -1)
-_NIC="${_NIC:-eth0}"
-iptables -t mangle -C FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1380 2>/dev/null || \
-    iptables -t mangle -A FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1380
-iptables -t mangle -C POSTROUTING -o "$_NIC" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1380 2>/dev/null || \
-    iptables -t mangle -A POSTROUTING -o "$_NIC" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1380
-# Persist across reboots via iptables-persistent
-if ! dpkg -s iptables-persistent >/dev/null 2>&1; then
-    echo iptables-persistent iptables-persistent/autosave_v4 boolean true | debconf-set-selections >/dev/null 2>&1 || true
-    echo iptables-persistent iptables-persistent/autosave_v6 boolean false | debconf-set-selections >/dev/null 2>&1 || true
-    DEBIAN_FRONTEND=noninteractive apt-get install -y -q iptables-persistent >/dev/null 2>&1 || true
-fi
-if dpkg -s iptables-persistent >/dev/null 2>&1; then
-    mkdir -p /etc/iptables
-    iptables-save > /etc/iptables/rules.v4
-    netfilter-persistent save >/dev/null 2>&1 || true
-else
-    warn "Could not install iptables-persistent — MTU clamp will not persist across reboot."
-fi
-
 header "Secure SSH"
 SSH_ARGS=(--dir "$INSTALL_DIR")
 if [[ -n "$NEW_SSH_PORT" ]]; then

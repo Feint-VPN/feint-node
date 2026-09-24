@@ -63,7 +63,7 @@ class SingBoxFileStore(IConfigStore):
         if not self.config_path.exists():
             raise FileNotFoundError(f"Config not found: {self.config_path}")
         self._ensure_backup_dir()
-        ts = datetime.now(tz=UTC).strftime("%Y%m%d_%H%M%S")
+        ts = datetime.now(tz=UTC).strftime("%Y%m%d_%H%M%S_%f")
         dest = self.backup_dir / f"config_{ts}.json"
         with open(self.config_path, encoding="utf-8") as src:
             data = src.read()

@@ -108,14 +108,16 @@ class OutboundService:
 
         rule = next((rule for rule in config.route.rules if rule.outbound == tag), None)
         current = set(rule.auth_user or []) if rule is not None else set()
-        if user_ids <= current:
+        other_assignments = any(
+            other.outbound
+            and other.outbound.startswith(OUTBOUND_PREFIX)
+            and other.outbound != tag
+            and bool(user_ids.intersection(other.auth_user or []))
+            for other in config.route.rules
+        )
+        if user_ids <= current and not other_assignments:
             return
-        if rule is None:
-            config.route.rules.append(
-                RouteRule(action="route", auth_user=sorted(user_ids), outbound=tag)
-            )
-        else:
-            rule.auth_user = sorted(current | user_ids)
+        self._replace_rule(config, tag, current | user_ids)
         await commit_config(
             self._store, self._runtime, config, await self._store.backup()
         )

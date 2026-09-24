@@ -150,14 +150,9 @@ ports = {
 }
 path = pathlib.Path(env.get("CONFIG_PATH", "/opt/sing-box/config.json"))
 config = json.loads(path.read_text())
-found = set()
 for inbound in config.get("inbounds", []):
     if inbound.get("tag") in ports:
         inbound["listen_port"] = ports[inbound["tag"]]
-        found.add(inbound["tag"])
-missing = set(ports) - found
-if missing:
-    raise SystemExit("persisted config is missing inbounds: " + ", ".join(sorted(missing)))
 with tempfile.NamedTemporaryFile("w", dir=path.parent, delete=False) as handle:
     json.dump(config, handle, separators=(",", ":"))
     handle.write("\n")
