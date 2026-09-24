@@ -157,7 +157,7 @@ fi
 
 OLD_COMMIT="${FEINT_UPDATE_OLD_COMMIT:-$(git rev-parse HEAD)}"
 info "Fetching origin/$BRANCH"
-git fetch origin "$BRANCH" --prune
+git fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" --prune
 git reset --hard "origin/$BRANCH"
 if [[ "${FEINT_UPDATE_REEXEC:-0}" != 1 && "$(git rev-parse HEAD)" != "$OLD_COMMIT" ]]; then
     args=(--dir "$INSTALL_DIR" --branch "$BRANCH")

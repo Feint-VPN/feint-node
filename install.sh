@@ -252,7 +252,7 @@ REPO_URL="https://github.com/Feint-VPN/feint-node.git"
 
 if [[ -d "$INSTALL_DIR/.git" ]]; then
     warn "Directory $INSTALL_DIR already exists — pulling latest changes"
-    run git -C "$INSTALL_DIR" fetch origin "$BRANCH" --progress
+    run git -C "$INSTALL_DIR" fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" --progress
     run git -C "$INSTALL_DIR" reset --hard "origin/$BRANCH"
 else
     info "Cloning $REPO_URL → $INSTALL_DIR ..."
