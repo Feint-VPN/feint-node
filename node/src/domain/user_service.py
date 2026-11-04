@@ -12,6 +12,7 @@ from domain.errors import (
 from domain.models import Inbound, InboundUser, SingBoxConfig
 from domain.mutation import commit_config, serialized_mutation
 from domain.ports import IConfigStore, IConfigUrlBuilder, IContainerRuntime
+from domain.users import ProtocolConfig, UserConfigs, UserData, UserPage
 from utils.crypto import generate_secure_password
 from utils.logging_config import get_logger
 
@@ -22,6 +23,7 @@ PROTOCOL_TAGS: dict[str, str] = {
     "vmess": "vmess-ws-in",
     "trojan": "trojan-in",
     "hysteria2": "hysteria2-in",
+    "tuic": "tuic-in",
     "shadowsocks": "shadowsocks-in",
 }
 
@@ -31,6 +33,8 @@ def _adapt_user(username: str, uuid: str, password: str, proto: str) -> InboundU
         return InboundUser(name=username, uuid=uuid, flow="xtls-rprx-vision")
     if proto == "vmess":
         return InboundUser(name=username, uuid=uuid)
+    if proto == "tuic":
+        return InboundUser(name=username, uuid=uuid, password=password)
     if proto in ("trojan", "hysteria2", "shadowsocks"):
         return InboundUser(name=username, password=password)
     raise ValueError(f"Unknown protocol: {proto}")
@@ -38,10 +42,6 @@ def _adapt_user(username: str, uuid: str, password: str, proto: str) -> InboundU
 
 def _find_inbound(config: SingBoxConfig, tag: str) -> Inbound | None:
     return next((ib for ib in config.inbounds if ib.tag == tag), None)
-
-
-def _user_in(inbound: Inbound, username: str) -> bool:
-    return any(u.name == username for u in inbound.users)
 
 
 def _find_user(inbound: Inbound, username: str) -> InboundUser | None:
@@ -62,7 +62,7 @@ def _published_protocols(
         outbound.tag in routed_outbounds and outbound.type == "socks"
         for outbound in config.outbounds
     ):
-        supported = {"vless", "hysteria2"}
+        supported = {"vless", "hysteria2", "tuic"}
     else:
         supported = set(PROTOCOL_TAGS)
     if enabled_protocols is not None:
@@ -128,7 +128,7 @@ class UserService:
         username: str,
         requested_uuid: str | None = None,
         requested_password: str | None = None,
-    ) -> dict:
+    ) -> UserData:
         return (
             await self._create_users(
                 [(username, requested_uuid, requested_password)],
@@ -148,7 +148,7 @@ class UserService:
         users: list[tuple[str, str | None, str | None]],
         *,
         skip_existing: bool,
-    ) -> list[dict]:
+    ) -> list[UserData]:
         config = await self._store.load()
 
         configured = [
@@ -159,19 +159,25 @@ class UserService:
         if not configured:
             raise InboundNotFoundError("No supported inbound is configured")
 
-        created = []
+        indexes = {
+            inbound.tag: {
+                user.name: user for user in reversed(inbound.users) if user.name
+            }
+            for _, inbound in configured
+        }
+        created: list[UserData] = []
         for username, requested_uuid, requested_password in users:
             existing = [
                 user
                 for _, inbound in configured
-                if (user := _find_user(inbound, username)) is not None
+                if (user := indexes[inbound.tag].get(username)) is not None
             ]
             if existing and not skip_existing:
                 raise UserAlreadyExistsError(f"User '{username}' already exists")
             missing = [
                 (protocol, inbound)
                 for protocol, inbound in configured
-                if not _user_in(inbound, username)
+                if username not in indexes[inbound.tag]
             ]
             if not missing:
                 continue
@@ -187,7 +193,9 @@ class UserService:
                 or generate_secure_password(32)
             )
             for protocol, inbound in missing:
-                inbound.users.append(_adapt_user(username, uid, pwd, protocol))
+                user = _adapt_user(username, uid, pwd, protocol)
+                inbound.users.append(user)
+                indexes[inbound.tag][username] = user
             created.append(
                 {
                     "username": username,
@@ -247,7 +255,7 @@ class UserService:
         )
         logger.info("User deleted", extra={"extra_fields": {"username": username}})
 
-    async def get_user(self, username: str) -> dict:
+    async def get_user(self, username: str) -> UserData:
         config = await self._store.load()
         uid, pwd, found_protocols = "", "", []
 
@@ -272,9 +280,9 @@ class UserService:
             "created_at": datetime.now(tz=UTC),
         }
 
-    async def list_users(self, skip: int = 0, limit: int = 50) -> dict:
+    async def list_users(self, skip: int = 0, limit: int = 50) -> UserPage:
         config = await self._store.load()
-        users: dict[str, dict] = {}
+        users: dict[str, UserData] = {}
 
         for proto, tag in PROTOCOL_TAGS.items():
             ib = _find_inbound(config, tag)
@@ -285,14 +293,20 @@ class UserService:
                     continue
                 entry = users.setdefault(
                     u.name,
-                    {"username": u.name, "uuid": "", "password": "", "protocols": []},
+                    {
+                        "username": u.name,
+                        "uuid": "",
+                        "password": "",
+                        "protocols": [],
+                        "created_at": datetime.now(tz=UTC),
+                    },
                 )
                 entry["protocols"].append(proto)
                 entry["uuid"] = entry["uuid"] or (u.uuid or "")
                 entry["password"] = entry["password"] or (u.password or "")
 
         all_users = sorted(
-            [{**data, "created_at": datetime.now(tz=UTC)} for data in users.values()],
+            users.values(),
             key=lambda d: d["username"],
         )
         return {
@@ -302,99 +316,29 @@ class UserService:
             "skip": skip,
         }
 
-    async def get_user_configs(self, username: str, domain: str) -> dict:
+    async def get_user_configs(self, username: str, domain: str) -> UserConfigs:
         config = await self._store.load()
-        by_proto: dict[str, tuple] = {}  # proto -> (user, inbound)
-        published_protocols = _published_protocols(
-            config,
-            username,
-            self._published_protocols,
-        )
-        user_exists = False
-
-        for proto, tag in PROTOCOL_TAGS.items():
-            ib = _find_inbound(config, tag)
-            if ib is None:
+        published = _published_protocols(config, username, self._published_protocols)
+        configs: dict[str, ProtocolConfig | None] = dict.fromkeys(PROTOCOL_TAGS)
+        found = False
+        for protocol, tag in PROTOCOL_TAGS.items():
+            inbound = _find_inbound(config, tag)
+            if inbound is None:
                 continue
-            user = _find_user(ib, username)
-            if user:
-                user_exists = True
-                if proto in published_protocols:
-                    by_proto[proto] = (user, ib)
-
-        if not user_exists:
+            user = _find_user(inbound, username)
+            if user is None:
+                continue
+            found = True
+            if protocol in published:
+                configs[protocol] = self._url_builder.build(
+                    protocol,
+                    user,
+                    inbound,
+                    domain,
+                    public_port=self._hysteria2_public_port
+                    if protocol == "hysteria2"
+                    else None,
+                )
+        if not found:
             raise UserNotFoundError(f"User '{username}' not found")
-
-        configs: dict[str, dict | None] = {
-            "vless": None,
-            "vmess": None,
-            "trojan": None,
-            "hysteria2": None,
-            "shadowsocks": None,
-        }
-
-        if "vless" in by_proto:
-            user, ib = by_proto["vless"]
-            url = self._url_builder.vless_url(
-                uuid=user.uuid or "", domain=domain, port=ib.listen_port
-            )
-            configs["vless"] = {
-                "protocol": "vless",
-                "config_url": url,
-                "port": ib.listen_port,
-            }
-
-        if "vmess" in by_proto:
-            user, ib = by_proto["vmess"]
-            ws_path = ib.transport.path if ib.transport else "/vmess"
-            url = self._url_builder.vmess_url(
-                user.uuid or "", domain, ib.listen_port, path=ws_path or "/vmess"
-            )
-            configs["vmess"] = {
-                "protocol": "vmess",
-                "config_url": url,
-                "port": ib.listen_port,
-            }
-
-        if "trojan" in by_proto:
-            user, ib = by_proto["trojan"]
-            url = self._url_builder.trojan_url(
-                user.password or "", domain, ib.listen_port
-            )
-            configs["trojan"] = {
-                "protocol": "trojan",
-                "config_url": url,
-                "port": ib.listen_port,
-            }
-
-        if "hysteria2" in by_proto:
-            user, ib = by_proto["hysteria2"]
-            public_port = self._hysteria2_public_port or ib.listen_port
-            url = self._url_builder.hysteria2_url(
-                user.password or "", domain, public_port
-            )
-            configs["hysteria2"] = {
-                "protocol": "hysteria2",
-                "config_url": url,
-                "port": public_port,
-            }
-
-        if "shadowsocks" in by_proto:
-            user, ib = by_proto["shadowsocks"]
-            method = ib.method or "2022-blake3-aes-128-gcm"
-            user_psk = user.password or ""
-            # 2022-blake3 multi-user mode: client password = server_psk:user_psk
-            if ib.password and method.startswith("2022-blake3"):
-                combined_password = f"{ib.password}:{user_psk}"
-            else:
-                combined_password = user_psk
-            url = self._url_builder.shadowsocks_url(
-                combined_password, ib.listen_port, method, domain=domain
-            )
-            configs["shadowsocks"] = {
-                "protocol": "shadowsocks",
-                "config_url": url,
-                "port": ib.listen_port,
-            }
-
         return {"username": username, "configs": configs}

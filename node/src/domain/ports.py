@@ -2,7 +2,8 @@
 
 from abc import ABC, abstractmethod
 
-from domain.models import SingBoxConfig
+from domain.models import Inbound, InboundUser, SingBoxConfig
+from domain.users import ProtocolConfig
 
 
 class IConfigStore(ABC):
@@ -22,7 +23,7 @@ class IConfigStore(ABC):
 
 
 class IContainerRuntime(ABC):
-    """Restart the sing-box container."""
+    """Restart the selected VPN runtime."""
 
     @abstractmethod
     async def reload(self) -> None: ...
@@ -32,27 +33,15 @@ class IContainerRuntime(ABC):
 
 
 class IConfigUrlBuilder(ABC):
-    """Generate protocol-specific client connection URLs."""
+    """Generate one protocol connection from its configured inbound."""
 
     @abstractmethod
-    def vless_url(
+    def build(
         self,
-        uuid: str,
+        protocol: str,
+        user: InboundUser,
+        inbound: Inbound,
         domain: str,
-        port: int,
-    ) -> str: ...
-
-    @abstractmethod
-    def vmess_url(
-        self, uuid: str, domain: str, port: int, path: str = "/vmess", label: str = ""
-    ) -> str: ...
-
-    @abstractmethod
-    def trojan_url(self, password: str, domain: str, port: int) -> str: ...
-    @abstractmethod
-    def hysteria2_url(self, password: str, domain: str, port: int) -> str: ...
-
-    @abstractmethod
-    def shadowsocks_url(
-        self, password: str, port: int, method: str, domain: str = "127.0.0.1"
-    ) -> str: ...
+        *,
+        public_port: int | None = None,
+    ) -> ProtocolConfig: ...

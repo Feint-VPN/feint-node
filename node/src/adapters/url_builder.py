@@ -4,7 +4,9 @@ import base64
 import json
 from urllib.parse import quote, urlencode
 
+from domain.models import Inbound, InboundUser
 from domain.ports import IConfigUrlBuilder
+from domain.users import ProtocolConfig
 
 
 class UrlBuilder(IConfigUrlBuilder):
@@ -12,6 +14,40 @@ class UrlBuilder(IConfigUrlBuilder):
         self.public_key = public_key
         self.short_id = short_id
         self.server_name = server_name
+
+    def build(
+        self,
+        protocol: str,
+        user: InboundUser,
+        inbound: Inbound,
+        domain: str,
+        *,
+        public_port: int | None = None,
+    ) -> ProtocolConfig:
+        port = public_port or inbound.listen_port
+        match protocol:
+            case "vless":
+                url = self.vless_url(user.uuid or "", domain, port)
+            case "vmess":
+                path = inbound.transport.path if inbound.transport else None
+                url = self.vmess_url(
+                    user.uuid or "", domain, port, path=path or "/vmess"
+                )
+            case "trojan":
+                url = self.trojan_url(user.password or "", domain, port)
+            case "hysteria2":
+                url = self.hysteria2_url(user.password or "", domain, port)
+            case "tuic":
+                url = self.tuic_url(user.uuid or "", user.password or "", domain, port)
+            case "shadowsocks":
+                method = inbound.method or "2022-blake3-aes-128-gcm"
+                password = user.password or ""
+                if inbound.password and method.startswith("2022-blake3"):
+                    password = f"{inbound.password}:{password}"
+                url = self.shadowsocks_url(password, port, method, domain=domain)
+            case _:
+                raise ValueError(f"Unknown protocol: {protocol}")
+        return {"protocol": protocol, "config_url": url, "port": port}
 
     def vless_url(
         self,
@@ -80,3 +116,15 @@ class UrlBuilder(IConfigUrlBuilder):
             .rstrip("=")
         )
         return f"ss://{userinfo}@{domain}:{port}#Shadowsocks"
+
+    def tuic_url(self, uuid: str, password: str, domain: str, port: int) -> str:
+        params = urlencode(
+            {
+                "sni": domain,
+                "alpn": "h3",
+                "congestion_control": "cubic",
+                "udp_relay_mode": "native",
+                "allow_insecure": "0",
+            }
+        )
+        return f"tuic://{uuid}:{quote(password, safe='')}@{domain}:{port}?{params}#{quote(domain)}"
