@@ -27,6 +27,7 @@ def get_container_runtime() -> IContainerRuntime:
                         ),
                         container_name=os.getenv("VPN_RUNTIME_CONTAINER_NAME", "xray"),
                         api_listen=os.getenv("XRAY_API_LISTEN", "0.0.0.0:10085"),
+                        api_address=os.getenv("V2RAY_API_ADDRESS", "127.0.0.1:10085") if os.getenv("XRAY_HOT_RELOAD", "false").lower() == "true" else None,
                     )
                 else:
                     container_runtime = DockerRuntime(

@@ -6,8 +6,6 @@ from pydantic import BaseModel, Field, SecretStr
 
 
 class InboundUser(BaseModel):
-    model_config = {"extra": "allow"}
-
     name: str | None = None
     uuid: str | None = None
     password: str | None = None
@@ -15,8 +13,6 @@ class InboundUser(BaseModel):
 
 
 class TLSConfig(BaseModel):
-    model_config = {"extra": "allow"}
-
     enabled: bool
     certificate_path: str | None = None
     key_path: str | None = None
@@ -25,8 +21,6 @@ class TLSConfig(BaseModel):
 
 
 class TransportConfig(BaseModel):
-    model_config = {"extra": "allow"}
-
     type: str
     path: str | None = None
     max_early_data: int | None = None
@@ -34,8 +28,6 @@ class TransportConfig(BaseModel):
 
 
 class Inbound(BaseModel):
-    model_config = {"extra": "allow"}
-
     type: str
     tag: str
     listen: str
@@ -167,8 +159,6 @@ class Route(BaseModel):
 
 
 class LogConfig(BaseModel):
-    model_config = {"extra": "allow"}
-
     level: str = "info"
     timestamp: bool = True
 

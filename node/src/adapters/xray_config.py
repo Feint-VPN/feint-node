@@ -46,7 +46,13 @@ def render_xray_config(
     source: str,
     destination: str,
     api_listen: str = "0.0.0.0:10085",
+    *,
+    min_client_version: str = "",
+    hysteria2_compat_port: int | None = None,
+    control_api: bool = False,
 ) -> None:
+    if min_client_version or hysteria2_compat_port:
+        raise ValueError("Legacy renderer does not support compatibility overrides")
     config = SingBoxConfig.model_validate_json(Path(source).read_text(encoding="utf-8"))
     inbound = next(
         (item for item in config.inbounds if item.tag == "vless-reality-in"), None
@@ -103,11 +109,6 @@ def render_xray_config(
             },
         }
     ]
-    min_client_version = os.getenv("XRAY_REALITY_MIN_CLIENT_VERSION", "").strip()
-    if min_client_version:
-        inbounds[0]["streamSettings"]["realitySettings"]["minClientVer"] = (
-            min_client_version
-        )
     if hysteria is not None:
         inbounds.append(
             _hysteria_inbound(
@@ -183,7 +184,7 @@ def render_xray_config(
         "api": {
             "tag": "api",
             "listen": api_listen,
-            "services": ["StatsService"],
+            "services": ["StatsService", "HandlerService", "RoutingService"] if control_api else ["StatsService"],
         },
         "policy": {
             "levels": {
@@ -232,4 +233,5 @@ if __name__ == "__main__":
         sys.argv[1],
         sys.argv[2],
         sys.argv[3] if len(sys.argv) > 3 else "0.0.0.0:10085",
+        control_api=os.getenv("XRAY_HOT_RELOAD", "false").lower() == "true",
     )

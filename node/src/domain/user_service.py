@@ -62,7 +62,7 @@ def _published_protocols(
         outbound.tag in routed_outbounds and outbound.type == "socks"
         for outbound in config.outbounds
     ):
-        supported = {"vless", "hysteria2"}
+        supported = {"vless"}
     else:
         supported = set(PROTOCOL_TAGS)
     if enabled_protocols is not None:
@@ -150,6 +150,7 @@ class UserService:
         skip_existing: bool,
     ) -> list[dict]:
         config = await self._store.load()
+        backup = await self._store.backup()
 
         configured = [
             (protocol, inbound)
@@ -203,9 +204,7 @@ class UserService:
 
         _sync_v2ray_stats_users(config)
 
-        await commit_config(
-            self._store, self._runtime, config, await self._store.backup()
-        )
+        await commit_config(self._store, self._runtime, config, backup)
 
         logger.info("Users created", extra={"extra_fields": {"count": len(created)}})
         return created
@@ -213,6 +212,7 @@ class UserService:
     @serialized_mutation
     async def delete_user(self, username: str) -> None:
         config = await self._store.load()
+        backup = await self._store.backup()
 
         removed = False
         for tag in PROTOCOL_TAGS.values():
@@ -242,9 +242,7 @@ class UserService:
 
         _sync_v2ray_stats_users(config)
 
-        await commit_config(
-            self._store, self._runtime, config, await self._store.backup()
-        )
+        await commit_config(self._store, self._runtime, config, backup)
         logger.info("User deleted", extra={"extra_fields": {"username": username}})
 
     async def get_user(self, username: str) -> dict:
