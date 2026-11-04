@@ -82,15 +82,23 @@ Creating or deleting a user follows one transaction-like flow:
 | VMess WebSocket | `vmess-ws-in` | UUID |
 | Trojan | `trojan-in` | Password |
 | Hysteria2 | `hysteria2-in` | Password |
+| TUIC (optional companion) | `tuic-in` | UUID + password |
 | Shadowsocks 2022 | `shadowsocks-in` | Base64 key |
 
 One local user is added to every configured protocol. Protocol names returned
 by runtime telemetry are intentionally strings because sing-box capabilities
 may change independently of the node API.
 
+See [TUIC companion setup and acceptance](docs/tuic.md) for an additive Xray
+deployment that preserves existing clients and aggregates both runtimes' traffic.
+
 ## 🌙 Installation
 
 Use the native Xray-core runtime for a VLESS REALITY + Hysteria2 node:
+
+For opt-in user additions and route assignments without disconnecting live HY2
+sessions, see [Xray hot registration](docs/xray-hot-registration.md). It requires
+a private control listener; TUIC and hard credential revocation still restart.
 
 ```bash
 bash install.sh \
@@ -286,6 +294,15 @@ Managed outbounds accept `type=hysteria2` on sing-box and `type=socks` on both
 sing-box and Xray. A reverse route uses a local SOCKS5 endpoint and therefore
 does not couple user provisioning to transport setup.
 
+SOCKS outbounds also accept optional paired `username` / `password` fields. The
+password is redacted in API models and explicitly unwrapped only for the private
+runtime configuration. Use authenticated remote SOCKS only over the private
+Tailscale path, not the public internet. On a hot-reload Xray node, a changed
+authenticated endpoint gets a versioned handler; routing switches only after
+the handler is added. The old handler remains available for drain and rollback.
+HY2 ingress stays unchanged. Preparation does not apply this migration; see
+[resource budget and migration gates](docs/resource-budget.md).
+
 ### Reverse transport
 
 | Method | Path | Result |
@@ -421,6 +438,17 @@ RU node's UDP `443 → 36454` mapping. Remove the unit when Xray itself moves
 to UDP `443`.
 
 ### Private RU → GE interconnect (optional)
+
+The SDK can manage separate per-route sidecars with `NodeTransport.TAILSCALE`.
+It invokes `scripts/manage_interconnect.py` over trusted SSH, supplying peer
+credentials through stdin. This helper requires an already running Tailscale IPv4
+interface, picks free ports, authenticates the peer, and persists private state in
+`.interconnect/`. It does not alter Tailscale, the main runtime or the legacy
+`interconnect.json` deployment below. Repeated calls reuse the same credentials
+and listener; removal checks the container's deployment label before deleting it.
+Only its own container and files are removed. Include `.interconnect/` in backups.
+The helper uses `INTERCONNECT_IMAGE`, falling back to the installed `SINGBOX_IMAGE`;
+SDK-managed channels need this script on both nodes. No new HTTP API is required.
 
 `docker-compose.interconnect.yml` runs an independent sing-box process. It does
 not replace or restart the node's Xray, rathole, or API containers. The exit
@@ -677,9 +705,57 @@ There is no parallel legacy router or service tree. `api`, `domain` and
 
 ## ✅ Quality
 
+```bash
+uv sync --extra dev --frozen
+uv run --extra dev ruff check node/src acceptance scripts
+uv run --extra dev ruff format --check node/src acceptance scripts
+uv run --extra dev basedpyright
+uv run --extra dev python acceptance/service_contract.py
+uv run --extra dev python acceptance/route_subscription.py
+```
+
+`utils/settings.py` is the process configuration boundary (`BaseSettings`):
+adapters receive values rather than parsing the environment again. The Python
+configuration accepts `DEV_MODE=true`, `1` and `yes`; use `true` with the existing
+Docker shell entrypoint, whose TLS startup behavior is unchanged.
+Subscription template edits are persisted separately by
+`adapters/subscription_settings.py` and take effect immediately.
+
+`api/services.py` creates application-scoped dependencies during lifespan and shares
+one configuration mutation lock between users and outbounds. Docker connections remain
+lazy so a missing daemon does not prevent the diagnostic API from starting.
+`api/errors.py` translates domain failures while keeping runtime details out of responses.
+`build_xray_config()` is a pure transformation; its file/CLI wrapper accepts explicit
+options from process configuration. Neither this separation nor the user-service
+typing changes the HTTP routes, credential format or rollback sequence.
+
 See [acceptance scenarios and release gates](acceptance/README.md) for actual
 commands and coverage. Lint, local contract checks, live runtime acceptance and
 clean installation/update are separate gates; none implies the others passed.
+
+## Resource overhead
+
+The traffic tracker reuses one gRPC channel per stats endpoint for its lifecycle,
+retaining the five-second poll interval, retry behavior and persisted byte totals.
+Shutdown closes the channels; transient RPC failures do not discard traffic totals.
+Atomic traffic snapshots include source checkpoints so restarting only the API
+does not count the still-running core's bytes twice. Disk writes run outside the
+API event loop; shutdown waits for the writer before saving its final snapshot.
+Legacy snapshots retain their recorded totals and establish a live baseline on
+the first successful poll. Bytes between the last legacy snapshot and that poll
+cannot be reconstructed; this transition does not rewrite historical totals.
+Xray enables upload/download counters but not its separate online-IP tracking map:
+Feint's `last_seen` comes from traffic changes, not the online-IP RPCs.
+This describes freshly generated configuration. A live legacy core keeps its
+online-IP policy until a separately approved reconfiguration; API-only updates
+do not disable it or restart HY2.
+
+Transport canaries include whole-host and Tailscale resources and separate bulk
+and UDP technical clients. This instrumentation is not a per-user bandwidth
+scheduler: shared CPU caps must not be presented as account-level fairness.
+
+Measurements, accepted overload behavior and rollout gates:
+[Resource budget](docs/resource-budget.md).
 
 ## License
 
