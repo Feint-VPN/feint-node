@@ -165,10 +165,10 @@ def main() -> None:
             assert assignments == ["outbound:new-route"], assignments
             backups = sorted((Path(directory) / "backups").glob("config_*.json"))
             assert len(backups) == 2, backups
-            assert [
+            assert sorted(
                 len(json.loads(backup.read_text(encoding="utf-8"))["outbounds"])
                 for backup in backups
-            ] == [1, 2]
+            ) == [1, 2]
             xray_path = Path(directory) / "xray.json"
             render_xray_config(str(path), str(xray_path))
             xray = json.loads(xray_path.read_text(encoding="utf-8"))

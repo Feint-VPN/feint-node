@@ -153,7 +153,6 @@ class UserService:
         skip_existing: bool,
     ) -> list[dict]:
         config = await self._store.load()
-        backup = await self._store.backup()
 
         configured = [
             (protocol, inbound)
@@ -207,6 +206,7 @@ class UserService:
 
         _sync_v2ray_stats_users(config)
 
+        backup = await self._store.backup()
         await commit_config(self._store, self._runtime, config, backup)
 
         logger.info("Users created", extra={"extra_fields": {"count": len(created)}})
@@ -384,7 +384,9 @@ class UserService:
             user, ib = by_proto["tuic"]
             configs["tuic"] = {
                 "protocol": "tuic",
-                "config_url": self._url_builder.tuic_url(user.uuid or "", user.password or "", domain, ib.listen_port),
+                "config_url": self._url_builder.tuic_url(
+                    user.uuid or "", user.password or "", domain, ib.listen_port
+                ),
                 "port": ib.listen_port,
             }
 
