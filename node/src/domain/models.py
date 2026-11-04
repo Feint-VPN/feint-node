@@ -1,0 +1,200 @@
+"""Sing-box configuration models."""
+
+from typing import Annotated, Any, Literal
+
+from pydantic import BaseModel, Field, SecretStr, model_validator
+
+
+class InboundUser(BaseModel):
+    model_config = {"extra": "allow"}
+
+    name: str | None = None
+    uuid: str | None = None
+    password: str | None = None
+    flow: str | None = None
+
+
+class TLSConfig(BaseModel):
+    model_config = {"extra": "allow"}
+
+    enabled: bool
+    certificate_path: str | None = None
+    key_path: str | None = None
+    server_name: str | None = None
+    reality: dict[str, Any] | None = None
+
+
+class TransportConfig(BaseModel):
+    model_config = {"extra": "allow"}
+
+    type: str
+    path: str | None = None
+    max_early_data: int | None = None
+    early_data_header_name: str | None = None
+
+
+class Inbound(BaseModel):
+    model_config = {"extra": "allow"}
+
+    type: str
+    tag: str
+    listen: str
+    listen_port: int
+    users: list[InboundUser] = []
+    tls: TLSConfig | None = None
+    transport: TransportConfig | None = None
+    method: str | None = None  # shadowsocks cipher method
+    password: str | None = None  # shadowsocks server PSK (2022 multi-user mode)
+    up_mbps: int | None = None  # hysteria2
+    down_mbps: int | None = None
+    multiplex: dict[str, Any] | None = None
+
+
+class Outbound(BaseModel):
+    model_config = {"extra": "allow"}
+
+    type: str
+    tag: str
+
+
+class Hysteria2Obfs(BaseModel):
+    type: Literal["salamander"] = "salamander"
+    password: SecretStr
+
+
+class OutboundTLS(BaseModel):
+    enabled: bool = True
+    server_name: str = Field(min_length=1, max_length=253)
+    insecure: bool = False
+
+
+class Hysteria2OutboundConfig(BaseModel):
+    type: Literal["hysteria2"] = "hysteria2"
+    server: str = Field(min_length=1, max_length=253)
+    server_port: int = Field(ge=1, le=65535)
+    password: SecretStr
+    tls: OutboundTLS
+    obfs: Hysteria2Obfs | None = None
+    up_mbps: int | None = Field(default=None, gt=0)
+    down_mbps: int | None = Field(default=None, gt=0)
+    auth_users: set[str] = Field(default_factory=set)
+
+
+class SocksOutboundConfig(BaseModel):
+    type: Literal["socks"] = "socks"
+    server: str = Field(min_length=1, max_length=253)
+    server_port: int = Field(ge=1, le=65535)
+    version: Literal["5"] = "5"
+    username: str | None = Field(default=None, min_length=1, max_length=255)
+    password: SecretStr | None = Field(default=None, min_length=1, max_length=255)
+    auth_users: set[str] = Field(default_factory=set)
+
+    @model_validator(mode="after")
+    def credentials(self):
+        if (self.username is None) != (self.password is None):
+            raise ValueError("SOCKS username and password must be provided together")
+        if self.username is not None and (
+            len(self.username.encode()) > 255
+            or (
+                self.password is not None
+                and len(self.password.get_secret_value().encode()) > 255
+            )
+        ):
+            raise ValueError("SOCKS credentials must fit in 255 bytes")
+        return self
+
+
+ManagedOutboundConfig = Annotated[
+    Hysteria2OutboundConfig | SocksOutboundConfig,
+    Field(discriminator="type"),
+]
+
+
+class ReverseServerConfig(BaseModel):
+    mode: Literal["server"] = "server"
+    bind_host: str = Field(default="0.0.0.0", min_length=1, max_length=253)
+    bind_port: int = Field(ge=1, le=65535)
+    expose_host: Literal["127.0.0.1"] = "127.0.0.1"
+    expose_port: int = Field(ge=1, le=65535)
+    token: SecretStr = Field(min_length=32, max_length=256)
+
+
+class ReverseClientConfig(BaseModel):
+    mode: Literal["client"] = "client"
+    remote_host: str = Field(min_length=1, max_length=253)
+    remote_port: int = Field(ge=1, le=65535)
+    token: SecretStr = Field(min_length=32, max_length=256)
+    remote_public_key: str = Field(min_length=44, max_length=64)
+
+
+ReverseTunnelConfig = Annotated[
+    ReverseServerConfig | ReverseClientConfig,
+    Field(discriminator="mode"),
+]
+
+
+class DNSServer(BaseModel):
+    model_config = {"extra": "allow"}
+
+    type: str
+    tag: str
+    server: str
+
+
+class DNSConfig(BaseModel):
+    model_config = {"extra": "allow"}
+
+    servers: list[DNSServer] = []
+    final: str | None = None
+    strategy: str | None = None
+    reverse_mapping: bool | None = None
+
+
+class RouteRule(BaseModel):
+    model_config = {"extra": "allow"}
+
+    action: str | None = None
+    port: list[int] | None = None
+    strategy: str | None = None
+    ip_is_private: bool | None = None
+    ip_cidr: list[str] | None = None
+    rule_set: str | list[str] | None = None
+    auth_user: list[str] | None = None
+    outbound: str | None = None
+
+
+class RuleSet(BaseModel):
+    model_config = {"extra": "allow"}
+
+    type: str
+    tag: str
+    format: str | None = None
+    path: str | None = None
+    url: str | None = None
+    update_interval: str | None = None
+
+
+class Route(BaseModel):
+    model_config = {"extra": "allow"}
+
+    rules: list[RouteRule] = []
+    rule_set: list[RuleSet] = []
+    final: str = "direct"
+
+
+class LogConfig(BaseModel):
+    model_config = {"extra": "allow"}
+
+    level: str = "info"
+    timestamp: bool = True
+
+
+class SingBoxConfig(BaseModel):
+    model_config = {"extra": "allow"}
+
+    log: LogConfig
+    dns: DNSConfig | None = None
+    inbounds: list[Inbound]
+    outbounds: list[Outbound]
+    route: Route
+    experimental: dict[str, Any] | None = None
