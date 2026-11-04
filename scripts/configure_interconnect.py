@@ -40,8 +40,16 @@ def read_password(path: Path) -> str:
 
 
 def entry_config(
-    address: str, remote_port: int, local_port: int, username: str, password: str
+    address: str,
+    remote_port: int,
+    local_port: int,
+    username: str,
+    password: str,
+    *,
+    udp_mode: str = "uot",
 ) -> dict:
+    if udp_mode not in ("uot", "native"):
+        raise ValueError("UDP mode must be uot or native")
     return {
         "log": {"level": "warn"},
         "inbounds": [
@@ -61,7 +69,7 @@ def entry_config(
                 "version": "5",
                 "username": username,
                 "password": password,
-                "udp_over_tcp": {"enabled": True, "version": 2},
+                "udp_over_tcp": {"enabled": udp_mode == "uot", "version": 2},
             }
         ],
         "route": {"final": "to-exit"},
