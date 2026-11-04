@@ -53,6 +53,9 @@ class IConfigUrlBuilder(ABC):
     def hysteria2_url(self, password: str, domain: str, port: int) -> str: ...
 
     @abstractmethod
+    def tuic_url(self, uuid: str, password: str, domain: str, port: int) -> str: ...
+
+    @abstractmethod
     def shadowsocks_url(
         self, password: str, port: int, method: str, domain: str = "127.0.0.1"
     ) -> str: ...

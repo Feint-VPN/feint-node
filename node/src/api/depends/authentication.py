@@ -19,9 +19,9 @@ def configured_api_secret() -> str | None:
 def is_valid_api_secret(provided_secret: str | None) -> bool:
     """Return whether a caller supplied the configured API secret."""
     expected = configured_api_secret()
-    return bool(expected and provided_secret) and hmac.compare_digest(
-        provided_secret, expected
-    )
+    if not expected or not provided_secret:
+        return False
+    return hmac.compare_digest(provided_secret, expected)
 
 
 async def verify_api_secret(

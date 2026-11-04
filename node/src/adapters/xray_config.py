@@ -237,13 +237,15 @@ def render_xray_config(
 if __name__ == "__main__":
     import sys
 
-    from utils.settings import settings
-
     render_xray_config(
         sys.argv[1],
         sys.argv[2],
-        sys.argv[3] if len(sys.argv) > 3 else os.getenv("XRAY_API_LISTEN", "0.0.0.0:10085"),
+        sys.argv[3]
+        if len(sys.argv) > 3
+        else os.getenv("XRAY_API_LISTEN", "0.0.0.0:10085"),
         min_client_version=os.getenv("XRAY_REALITY_MIN_CLIENT_VERSION", ""),
-        hysteria2_compat_port=int(os.environ["HYSTERIA2_COMPAT_PORT"]) if os.getenv("HYSTERIA2_COMPAT_PORT") else None,
+        hysteria2_compat_port=int(os.environ["HYSTERIA2_COMPAT_PORT"])
+        if os.getenv("HYSTERIA2_COMPAT_PORT")
+        else None,
         control_api=os.getenv("XRAY_HOT_RELOAD", "false").lower() == "true",
     )
