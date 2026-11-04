@@ -42,12 +42,14 @@ def _hysteria_inbound(inbound: Inbound, *, tag: str, port: int) -> dict[str, Any
     }
 
 
-def render_xray_config(
-    source: str,
-    destination: str,
+def build_xray_config(
+    config: SingBoxConfig,
     api_listen: str = "0.0.0.0:10085",
-) -> None:
-    config = SingBoxConfig.model_validate_json(Path(source).read_text(encoding="utf-8"))
+    *,
+    min_client_version: str = "",
+    hysteria2_compat_port: int | None = None,
+    control_api: bool = False,
+) -> dict[str, Any]:
     inbound = next(
         (item for item in config.inbounds if item.tag == "vless-reality-in"), None
     )
@@ -103,7 +105,7 @@ def render_xray_config(
             },
         }
     ]
-    min_client_version = os.getenv("XRAY_REALITY_MIN_CLIENT_VERSION", "").strip()
+    min_client_version = min_client_version.strip()
     if min_client_version:
         inbounds[0]["streamSettings"]["realitySettings"]["minClientVer"] = (
             min_client_version
@@ -116,12 +118,8 @@ def render_xray_config(
                 port=hysteria.listen_port,
             )
         )
-        compat_port_value = os.getenv("HYSTERIA2_COMPAT_PORT", "").strip()
-        if compat_port_value:
-            try:
-                compat_port = int(compat_port_value)
-            except ValueError as error:
-                raise ValueError("HYSTERIA2_COMPAT_PORT must be an integer") from error
+        if hysteria2_compat_port is not None:
+            compat_port = hysteria2_compat_port
             if not 1 <= compat_port <= 65535:
                 raise ValueError("HYSTERIA2_COMPAT_PORT must be between 1 and 65535")
             if compat_port != hysteria.listen_port:
@@ -183,7 +181,7 @@ def render_xray_config(
         "api": {
             "tag": "api",
             "listen": api_listen,
-            "services": ["StatsService"],
+            "services": ["StatsService", "HandlerService", "RoutingService"] if control_api else ["StatsService"],
         },
         "policy": {
             "levels": {
@@ -210,6 +208,26 @@ def render_xray_config(
         },
     }
 
+    return xray
+
+
+def render_xray_config(
+    source: str,
+    destination: str,
+    api_listen: str = "0.0.0.0:10085",
+    *,
+    min_client_version: str = "",
+    hysteria2_compat_port: int | None = None,
+    control_api: bool = False,
+) -> None:
+    config = SingBoxConfig.model_validate_json(Path(source).read_text(encoding="utf-8"))
+    xray = build_xray_config(
+        config,
+        api_listen,
+        min_client_version=min_client_version,
+        hysteria2_compat_port=hysteria2_compat_port,
+        control_api=control_api,
+    )
     path = Path(destination)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=".xray_", suffix=".json")
@@ -228,8 +246,13 @@ def render_xray_config(
 if __name__ == "__main__":
     import sys
 
+    from utils.settings import settings
+
     render_xray_config(
         sys.argv[1],
         sys.argv[2],
-        sys.argv[3] if len(sys.argv) > 3 else "0.0.0.0:10085",
+        sys.argv[3] if len(sys.argv) > 3 else os.getenv("XRAY_API_LISTEN", "0.0.0.0:10085"),
+        min_client_version=os.getenv("XRAY_REALITY_MIN_CLIENT_VERSION", ""),
+        hysteria2_compat_port=int(os.environ["HYSTERIA2_COMPAT_PORT"]) if os.getenv("HYSTERIA2_COMPAT_PORT") else None,
+        control_api=os.getenv("XRAY_HOT_RELOAD", "false").lower() == "true",
     )

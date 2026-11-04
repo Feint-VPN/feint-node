@@ -141,7 +141,7 @@ async def fetch_v2ray_user_counters(
     ) as channel:
         query_stats = channel.unary_unary(
             "/v2ray.core.app.stats.command.StatsService/QueryStats",
-            request_serializer=lambda msg: msg.SerializeToString(),
+            request_serializer=_QUERY_STATS_REQUEST.SerializeToString,
             response_deserializer=_QUERY_STATS_RESPONSE.FromString,
         )
         response = await query_stats(request, timeout=request_timeout)
@@ -166,20 +166,22 @@ class TrafficTracker:
 
     def __init__(
         self,
-        v2ray_api_address: str | None = None,
-        state_path: str | None = None,
+        v2ray_api_address: str,
+        state_path: str,
+        additional_addresses: tuple[str, ...] = (),
     ) -> None:
-        self._address = _normalize_v2ray_api_address(
-            v2ray_api_address or os.getenv("V2RAY_API_ADDRESS", "127.0.0.1:10085")
+        self._address = _normalize_v2ray_api_address(v2ray_api_address)
+        self._additional_addresses = tuple(
+            dict.fromkeys(
+                _normalize_v2ray_api_address(item) for item in additional_addresses
+            )
         )
-        self._state_path = Path(
-            state_path or os.getenv("TRAFFIC_STATE_PATH", "/opt/sing-box/traffic.json")
-        )
+        self._state_path = Path(state_path)
 
         # Per-user totals: { username: {"upload": int, "download": int, "last_seen": iso8601 | None } }
         self._totals: dict[str, dict] = {}
         # Last seen live user counters returned by the V2Ray stats service.
-        self._live_last: dict[str, tuple[int, int]] = {}
+        self._live_last: dict[tuple[str, str], tuple[int, int]] = {}
 
         self._lock = asyncio.Lock()
         self._task: asyncio.Task | None = None
@@ -254,7 +256,9 @@ class TrafficTracker:
             if username in self._totals:
                 del self._totals[username]
                 self._dirty = True
-            self._live_last.pop(username, None)
+            for key in list(self._live_last):
+                if key[1] == username:
+                    del self._live_last[key]
 
     # ----------------------------------------------------------------- polling
 
@@ -291,21 +295,35 @@ class TrafficTracker:
 
     async def _poll_once(self) -> None:
         counters = await self._fetch_user_counters()
+        sources = [(self._address, counters)]
+        for address in self._additional_addresses:
+            if address != self._address:
+                sources.append(
+                    (
+                        address,
+                        await fetch_v2ray_user_counters(address, self.REQUEST_TIMEOUT),
+                    )
+                )
         now_iso = datetime.now(tz=UTC).isoformat()
 
         async with self._lock:
             self._available = True
-            for user, current in counters.items():
+            for source, user, current in (
+                (source, user, current)
+                for source, counters in sources
+                for user, current in counters.items()
+            ):
                 upload = int(current.get("upload", 0))
                 download = int(current.get("download", 0))
 
-                prev = self._live_last.get(user, (0, 0))
+                key = (source, user)
+                prev = self._live_last.get(key, (0, 0))
                 if upload < prev[0] or download < prev[1]:
                     prev = (0, 0)
 
                 d_up = max(0, upload - prev[0])
                 d_dn = max(0, download - prev[1])
-                self._live_last[user] = (upload, download)
+                self._live_last[key] = (upload, download)
 
                 entry = self._totals.setdefault(
                     user, {"upload": 0, "download": 0, "last_seen": None}

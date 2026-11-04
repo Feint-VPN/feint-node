@@ -33,6 +33,7 @@ _PROTO_DISPLAY: dict[str, str] = {
     "vmess": "VMess",
     "trojan": "Trojan",
     "hysteria2": "Hysteria2",
+    "tuic": "TUIC",
     "shadowsocks": "Shadowsocks",
 }
 
@@ -57,7 +58,7 @@ def _set_label(url: str, label: str) -> str:
 
 
 # Canonical order for the subscription payload
-_PROTO_ORDER = ["vless", "vmess", "trojan", "hysteria2", "shadowsocks"]
+_PROTO_ORDER = ["vless", "vmess", "trojan", "hysteria2", "tuic", "shadowsocks"]
 
 router = APIRouter(prefix="/sub", tags=["subscription"])
 
