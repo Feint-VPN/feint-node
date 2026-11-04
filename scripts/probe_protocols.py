@@ -29,12 +29,19 @@ def _exact(conn: socket.socket, size: int) -> bytes:
     return bytes(data)
 
 
-def _socks_request(conn: socket.socket, command: int, host: str, port: int) -> tuple[str, int]:
+def _socks_request(
+    conn: socket.socket, command: int, host: str, port: int
+) -> tuple[str, int]:
     conn.sendall(b"\x05\x01\x00")
     if _exact(conn, 2) != b"\x05\x00":
         raise ConnectionError("SOCKS authentication failed")
     address = host.encode("idna")
-    conn.sendall(b"\x05" + bytes((command, 0, 3, len(address))) + address + port.to_bytes(2, "big"))
+    conn.sendall(
+        b"\x05"
+        + bytes((command, 0, 3, len(address)))
+        + address
+        + port.to_bytes(2, "big")
+    )
     version, result, _, address_type = _exact(conn, 4)
     if version != 5 or result != 0:
         raise ConnectionError(f"SOCKS command {command} failed ({result})")
@@ -53,8 +60,12 @@ def _tcp_probe(port: int, timeout: float) -> str:
     with socket.create_connection(("127.0.0.1", port), timeout=timeout) as conn:
         conn.settimeout(timeout)
         _socks_request(conn, 1, "api.ipify.org", 443)
-        with ssl.create_default_context().wrap_socket(conn, server_hostname="api.ipify.org") as tls:
-            tls.sendall(b"GET / HTTP/1.1\r\nHost: api.ipify.org\r\nConnection: close\r\n\r\n")
+        with ssl.create_default_context().wrap_socket(
+            conn, server_hostname="api.ipify.org"
+        ) as tls:
+            tls.sendall(
+                b"GET / HTTP/1.1\r\nHost: api.ipify.org\r\nConnection: close\r\n\r\n"
+            )
             response = bytearray()
             while len(response) < 8192 and (part := tls.recv(4096)):
                 response.extend(part)
@@ -78,7 +89,9 @@ def _udp_probe(port: int, timeout: float) -> None:
             question = b"\x07example\x03com\x00\x00\x01\x00\x01"
             dns = identifier + b"\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00" + question
             for server in ("1.1.1.1", "8.8.8.8"):
-                packet = b"\x00\x00\x00\x01" + socket.inet_aton(server) + b"\x00\x35" + dns
+                packet = (
+                    b"\x00\x00\x00\x01" + socket.inet_aton(server) + b"\x00\x35" + dns
+                )
                 udp.sendto(packet, ("127.0.0.1", relay_port))
                 try:
                     data, _ = udp.recvfrom(4096)
@@ -120,11 +133,21 @@ def _outbound(uri: str) -> dict:
     if parsed.scheme == "vless":
         return {
             "protocol": "vless",
-            "settings": {"vnext": [{"address": parsed.hostname, "port": parsed.port, "users": [{
-                "id": unquote(parsed.username),
-                "encryption": query.get("encryption", ["none"])[0],
-                "flow": query.get("flow", [""])[0],
-            }]}]},
+            "settings": {
+                "vnext": [
+                    {
+                        "address": parsed.hostname,
+                        "port": parsed.port,
+                        "users": [
+                            {
+                                "id": unquote(parsed.username),
+                                "encryption": query.get("encryption", ["none"])[0],
+                                "flow": query.get("flow", [""])[0],
+                            }
+                        ],
+                    }
+                ]
+            },
             "streamSettings": {
                 "network": query.get("type", ["tcp"])[0],
                 "security": query["security"][0],
@@ -153,7 +176,14 @@ def _probe(uri: str, image: str, timeout: float) -> dict:
         port = _free_port()
         config = {
             "log": {"loglevel": "warning"},
-            "inbounds": [{"listen": "127.0.0.1", "port": port, "protocol": "socks", "settings": {"auth": "noauth", "udp": True}}],
+            "inbounds": [
+                {
+                    "listen": "127.0.0.1",
+                    "port": port,
+                    "protocol": "socks",
+                    "settings": {"auth": "noauth", "udp": True},
+                }
+            ],
             "outbounds": [_outbound(uri)],
         }
         config_path = Path(temporary, "client.json")
@@ -162,7 +192,21 @@ def _probe(uri: str, image: str, timeout: float) -> dict:
         os.chown(config_path, -1, 65532)
         os.chmod(temporary, 0o750)
         os.chmod(config_path, 0o640)
-        command = ["docker", "run", "--rm", "--network", "host", "--user", "65532:65532", "--mount", f"type=bind,src={temporary},dst=/probe,readonly", image, "run", "-c", "/probe/client.json"]
+        command = [
+            "docker",
+            "run",
+            "--rm",
+            "--network",
+            "host",
+            "--user",
+            "65532:65532",
+            "--mount",
+            f"type=bind,src={temporary},dst=/probe,readonly",
+            image,
+            "run",
+            "-c",
+            "/probe/client.json",
+        ]
         with open(os.devnull, "w", encoding="utf-8") as quiet:
             process = subprocess.Popen(command, stdout=quiet, stderr=quiet)
             try:
@@ -199,8 +243,12 @@ def _probe(uri: str, image: str, timeout: float) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--subscription-url", default=os.getenv("FEINT_PROBE_SUBSCRIPTION_URL"))
-    parser.add_argument("--status-file", type=Path, default=Path("/var/lib/feint-probe/status.json"))
+    parser.add_argument(
+        "--subscription-url", default=os.getenv("FEINT_PROBE_SUBSCRIPTION_URL")
+    )
+    parser.add_argument(
+        "--status-file", type=Path, default=Path("/var/lib/feint-probe/status.json")
+    )
     parser.add_argument("--image", default="ghcr.io/xtls/xray-core:26.7.28")
     parser.add_argument("--timeout", type=float, default=12)
     parser.add_argument("--vantage", default=socket.gethostname())
@@ -211,7 +259,9 @@ def main() -> int:
 
     report = {"vantage": args.vantage, "checked_at": time.time(), "results": []}
     try:
-        with urllib.request.urlopen(args.subscription_url, timeout=args.timeout) as response:
+        with urllib.request.urlopen(
+            args.subscription_url, timeout=args.timeout
+        ) as response:
             content = base64.b64decode(response.read(), validate=True).decode()
         uris = [line.strip() for line in content.splitlines() if "://" in line]
         if not uris:
@@ -220,7 +270,9 @@ def main() -> int:
         if args.candidate_uri_file is not None:
             candidates = [
                 line.strip()
-                for line in args.candidate_uri_file.read_text(encoding="utf-8").splitlines()
+                for line in args.candidate_uri_file.read_text(
+                    encoding="utf-8"
+                ).splitlines()
                 if line.strip() and not line.lstrip().startswith("#")
             ]
         for uri, source in [(uri, "subscription") for uri in uris] + [
@@ -232,24 +284,30 @@ def main() -> int:
                 report["results"].append(result)
             except (OSError, ValueError, RuntimeError) as error:
                 parsed = urlsplit(uri)
-                report["results"].append({
-                    "protocol": parsed.scheme,
-                    "label": unquote(parsed.fragment),
-                    "source": source,
-                    "tcp": False,
-                    "udp": False,
-                    "error": type(error).__name__,
-                })
+                report["results"].append(
+                    {
+                        "protocol": parsed.scheme,
+                        "label": unquote(parsed.fragment),
+                        "source": source,
+                        "tcp": False,
+                        "udp": False,
+                        "error": type(error).__name__,
+                    }
+                )
     except (OSError, ValueError) as error:
         report["error"] = type(error).__name__
     args.status_file.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=args.status_file.parent, delete=False) as output:
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", dir=args.status_file.parent, delete=False
+    ) as output:
         json.dump(report, output, ensure_ascii=False, indent=2)
         pending = output.name
     os.replace(pending, args.status_file)
     print(json.dumps(report, ensure_ascii=False))
     published = [item for item in report["results"] if item["source"] == "subscription"]
-    return 0 if published and all(item["tcp"] and item["udp"] for item in published) else 1
+    return (
+        0 if published and all(item["tcp"] and item["udp"] for item in published) else 1
+    )
 
 
 if __name__ == "__main__":

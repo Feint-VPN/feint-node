@@ -63,16 +63,22 @@ class SingBoxFileStore(IConfigStore):
         if not self.config_path.exists():
             raise FileNotFoundError(f"Config not found: {self.config_path}")
         self._ensure_backup_dir()
-        ts = datetime.now(tz=UTC).strftime("%Y%m%d_%H%M%S_%f")
-        dest = self.backup_dir / f"config_{ts}.json"
+        ts = datetime.now(tz=UTC).strftime("%Y%m%d_%H%M%S")
         with open(self.config_path, encoding="utf-8") as src:
             data = src.read()
-        with open(dest, "w", encoding="utf-8") as dst:
-            dst.write(data)
-            dst.flush()
-            os.fsync(dst.fileno())
-        os.chmod(dest, 0o600)
-        return str(dest)
+        fd, dest = tempfile.mkstemp(
+            dir=self.backup_dir, prefix=f"config_{ts}_", suffix=".json"
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as dst:
+                dst.write(data)
+                dst.flush()
+                os.fsync(dst.fileno())
+            os.chmod(dest, 0o600)
+        except Exception:
+            os.unlink(dest)
+            raise
+        return dest
 
     async def restore(self, backup_path: str) -> None:
         await asyncio.to_thread(self._restore, backup_path)

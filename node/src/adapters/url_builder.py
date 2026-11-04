@@ -80,3 +80,15 @@ class UrlBuilder(IConfigUrlBuilder):
             .rstrip("=")
         )
         return f"ss://{userinfo}@{domain}:{port}#Shadowsocks"
+
+    def tuic_url(self, uuid: str, password: str, domain: str, port: int) -> str:
+        params = urlencode(
+            {
+                "sni": domain,
+                "alpn": "h3",
+                "congestion_control": "cubic",
+                "udp_relay_mode": "native",
+                "allow_insecure": "0",
+            }
+        )
+        return f"tuic://{uuid}:{quote(password, safe='')}@{domain}:{port}?{params}#{quote(domain)}"
