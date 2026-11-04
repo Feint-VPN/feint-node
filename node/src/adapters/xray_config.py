@@ -1,4 +1,4 @@
-"""Render the canonical Feint VLESS config for Xray-core."""
+"""Render canonical Feint VLESS/Hysteria2 configuration for Xray-core."""
 
 import json
 import os
@@ -6,6 +6,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from adapters.xray_socks import socks_outbound
 from domain.models import Inbound, SingBoxConfig
 
 
@@ -42,26 +43,9 @@ def _hysteria_inbound(inbound: Inbound, *, tag: str, port: int) -> dict[str, Any
     }
 
 
-def render_xray_config(
-    source: str,
-    destination: str,
-    api_listen: str = "0.0.0.0:10085",
-) -> None:
-    config = SingBoxConfig.model_validate_json(Path(source).read_text(encoding="utf-8"))
-    inbound = next(
-        (item for item in config.inbounds if item.tag == "vless-reality-in"), None
-    )
-    if inbound is None or inbound.tls is None or inbound.tls.reality is None:
-        raise ValueError("Xray runtime requires a VLESS REALITY inbound")
-    managed_outbounds = [
-        item for item in config.outbounds if item.tag.startswith("outbound:")
-    ]
-    unsupported = [item.type for item in managed_outbounds if item.type != "socks"]
-    if unsupported:
-        raise ValueError(
-            f"Xray runtime does not support managed outbound: {unsupported[0]}"
-        )
-
+def _vless_inbound(inbound: Inbound, min_client_version: str) -> dict[str, Any]:
+    if inbound.tls is None or inbound.tls.reality is None:
+        raise ValueError("VLESS REALITY settings are incomplete")
     reality = inbound.tls.reality
     handshake = reality.get("handshake") or {}
     server_name = inbound.tls.server_name or handshake.get("server")
@@ -70,44 +54,65 @@ def render_xray_config(
     if not server_name or not private_key or not short_ids:
         raise ValueError("VLESS REALITY settings are incomplete")
 
+    result = {
+        "tag": inbound.tag,
+        "listen": "0.0.0.0",
+        "port": inbound.listen_port,
+        "protocol": "vless",
+        "settings": {
+            "clients": [
+                {
+                    "id": user.uuid,
+                    "email": user.name,
+                    "flow": user.flow or "xtls-rprx-vision",
+                    "level": 0,
+                }
+                for user in inbound.users
+            ],
+            "decryption": "none",
+        },
+        "streamSettings": {
+            "network": "tcp",
+            "security": "reality",
+            "realitySettings": {
+                "target": f"{handshake.get('server', server_name)}:{handshake.get('server_port', 443)}",
+                "serverNames": [server_name],
+                "privateKey": private_key,
+                "shortIds": short_ids,
+            },
+        },
+    }
+    min_client_version = min_client_version.strip()
+    if min_client_version:
+        result["streamSettings"]["realitySettings"]["minClientVer"] = min_client_version
+    return result
+
+
+def build_xray_config(
+    config: SingBoxConfig,
+    api_listen: str = "0.0.0.0:10085",
+    *,
+    min_client_version: str = "",
+    hysteria2_compat_port: int | None = None,
+    control_api: bool = False,
+) -> dict[str, Any]:
+    inbound = next(
+        (item for item in config.inbounds if item.tag == "vless-reality-in"), None
+    )
     hysteria = next(
         (item for item in config.inbounds if item.tag == "hysteria2-in"), None
     )
-    inbounds: list[dict[str, Any]] = [
-        {
-            "tag": inbound.tag,
-            "listen": "0.0.0.0",
-            "port": inbound.listen_port,
-            "protocol": "vless",
-            "settings": {
-                "clients": [
-                    {
-                        "id": user.uuid,
-                        "email": user.name,
-                        "flow": user.flow or "xtls-rprx-vision",
-                        "level": 0,
-                    }
-                    for user in inbound.users
-                ],
-                "decryption": "none",
-            },
-            "streamSettings": {
-                "network": "tcp",
-                "security": "reality",
-                "realitySettings": {
-                    "target": f"{handshake.get('server', server_name)}:{handshake.get('server_port', 443)}",
-                    "serverNames": [server_name],
-                    "privateKey": private_key,
-                    "shortIds": short_ids,
-                },
-            },
-        }
+    if inbound is None and hysteria is None:
+        raise ValueError("Xray runtime requires a VLESS or Hysteria2 inbound")
+    managed_outbounds = [
+        item for item in config.outbounds if item.tag.startswith("outbound:")
     ]
-    min_client_version = os.getenv("XRAY_REALITY_MIN_CLIENT_VERSION", "").strip()
-    if min_client_version:
-        inbounds[0]["streamSettings"]["realitySettings"]["minClientVer"] = (
-            min_client_version
+    unsupported = [item.type for item in managed_outbounds if item.type != "socks"]
+    if unsupported:
+        raise ValueError(
+            f"Xray runtime does not support managed outbound: {unsupported[0]}"
         )
+    inbounds = [_vless_inbound(inbound, min_client_version)] if inbound else []
     if hysteria is not None:
         inbounds.append(
             _hysteria_inbound(
@@ -116,12 +121,8 @@ def render_xray_config(
                 port=hysteria.listen_port,
             )
         )
-        compat_port_value = os.getenv("HYSTERIA2_COMPAT_PORT", "").strip()
-        if compat_port_value:
-            try:
-                compat_port = int(compat_port_value)
-            except ValueError as error:
-                raise ValueError("HYSTERIA2_COMPAT_PORT must be an integer") from error
+        if hysteria2_compat_port is not None:
+            compat_port = hysteria2_compat_port
             if not 1 <= compat_port <= 65535:
                 raise ValueError("HYSTERIA2_COMPAT_PORT must be between 1 and 65535")
             if compat_port != hysteria.listen_port:
@@ -151,46 +152,36 @@ def render_xray_config(
         {"protocol": "freedom", "tag": "direct"},
         {"protocol": "blackhole", "tag": "block"},
     ]
+    tags = {}
     for outbound in managed_outbounds:
-        data = outbound.model_dump()
-        xray_outbounds.append(
-            {
-                "protocol": "socks",
-                "tag": outbound.tag,
-                "settings": {
-                    "servers": [
-                        {
-                            "address": data["server"],
-                            "port": data["server_port"],
-                        }
-                    ]
-                },
-            }
-        )
+        rendered = socks_outbound(outbound.tag, outbound.model_dump())
+        xray_outbounds.append(rendered)
+        tags[outbound.tag] = rendered["tag"]
 
     managed_rules = [
         {
             "type": "field",
             "user": rule.auth_user,
-            "outboundTag": rule.outbound,
+            "outboundTag": tags[rule.outbound],
         }
         for rule in config.route.rules
         if rule.outbound and rule.outbound.startswith("outbound:") and rule.auth_user
     ]
 
     xray = {
-        "log": {"loglevel": config.log.level},
+        "log": {"loglevel": config.log.level, "access": "none"},
         "api": {
             "tag": "api",
             "listen": api_listen,
-            "services": ["StatsService"],
+            "services": ["StatsService", "HandlerService", "RoutingService"]
+            if control_api
+            else ["StatsService"],
         },
         "policy": {
             "levels": {
                 "0": {
                     "statsUserUplink": True,
                     "statsUserDownlink": True,
-                    "statsUserOnline": True,
                 }
             }
         },
@@ -203,13 +194,35 @@ def render_xray_config(
                 *managed_rules,
                 {
                     "type": "field",
-                    "ip": ["geoip:private", "geoip:ru"],
+                    "ip": ["geoip:private", "geoip:ru"]
+                    if inbound is not None
+                    else ["geoip:private"],
                     "outboundTag": "block",
                 },
             ],
         },
     }
 
+    return xray
+
+
+def render_xray_config(
+    source: str,
+    destination: str,
+    api_listen: str = "0.0.0.0:10085",
+    *,
+    min_client_version: str = "",
+    hysteria2_compat_port: int | None = None,
+    control_api: bool = False,
+) -> None:
+    config = SingBoxConfig.model_validate_json(Path(source).read_text(encoding="utf-8"))
+    xray = build_xray_config(
+        config,
+        api_listen,
+        min_client_version=min_client_version,
+        hysteria2_compat_port=hysteria2_compat_port,
+        control_api=control_api,
+    )
     path = Path(destination)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=".xray_", suffix=".json")
@@ -228,8 +241,13 @@ def render_xray_config(
 if __name__ == "__main__":
     import sys
 
+    from utils.settings import settings
+
     render_xray_config(
         sys.argv[1],
         sys.argv[2],
-        sys.argv[3] if len(sys.argv) > 3 else "0.0.0.0:10085",
+        sys.argv[3] if len(sys.argv) > 3 else settings.XRAY_API_LISTEN,
+        min_client_version=settings.XRAY_REALITY_MIN_CLIENT_VERSION,
+        hysteria2_compat_port=settings.HYSTERIA2_COMPAT_PORT,
+        control_api=settings.XRAY_HOT_RELOAD,
     )

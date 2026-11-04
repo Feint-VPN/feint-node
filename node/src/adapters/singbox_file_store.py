@@ -35,7 +35,17 @@ class SingBoxFileStore(IConfigStore):
     async def save(self, config: SingBoxConfig) -> None:
         await asyncio.to_thread(self._save, config)
 
+    def _config_mode(self) -> int:
+        # Preserve an explicitly shared reader, never world or group write access.
+        if (
+            self.config_path.exists()
+            and self.config_path.stat().st_mode & 0o777 == 0o640
+        ):
+            return 0o640
+        return 0o600
+
     def _save(self, config: SingBoxConfig) -> None:
+        mode = self._config_mode()
         fd, tmp = tempfile.mkstemp(
             dir=self.config_path.parent, prefix=".cfg_", suffix=".tmp"
         )
@@ -49,8 +59,8 @@ class SingBoxFileStore(IConfigStore):
                 )
                 f.flush()
                 os.fsync(f.fileno())
+            os.chmod(tmp, mode)
             os.replace(tmp, self.config_path)
-            os.chmod(self.config_path, 0o600)
         except Exception:
             if os.path.exists(tmp):
                 os.unlink(tmp)
@@ -81,6 +91,7 @@ class SingBoxFileStore(IConfigStore):
         src = Path(backup_path)
         if not src.exists():
             raise FileNotFoundError(f"Backup not found: {backup_path}")
+        mode = self._config_mode()
         fd, tmp = tempfile.mkstemp(
             dir=self.config_path.parent, prefix=".restore_", suffix=".tmp"
         )
@@ -89,8 +100,8 @@ class SingBoxFileStore(IConfigStore):
                 f.write(src.read_text(encoding="utf-8"))
                 f.flush()
                 os.fsync(f.fileno())
+            os.chmod(tmp, mode)
             os.replace(tmp, self.config_path)
-            os.chmod(self.config_path, 0o600)
         except Exception:
             if os.path.exists(tmp):
                 os.unlink(tmp)
