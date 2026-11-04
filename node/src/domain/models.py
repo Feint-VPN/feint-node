@@ -2,7 +2,7 @@
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, Field, SecretStr, model_validator
 
 
 class InboundUser(BaseModel):
@@ -85,7 +85,23 @@ class SocksOutboundConfig(BaseModel):
     server: str = Field(min_length=1, max_length=253)
     server_port: int = Field(ge=1, le=65535)
     version: Literal["5"] = "5"
+    username: str | None = Field(default=None, min_length=1, max_length=255)
+    password: SecretStr | None = Field(default=None, min_length=1, max_length=255)
     auth_users: set[str] = Field(default_factory=set)
+
+    @model_validator(mode="after")
+    def credentials(self):
+        if (self.username is None) != (self.password is None):
+            raise ValueError("SOCKS username and password must be provided together")
+        if self.username is not None and (
+            len(self.username.encode()) > 255
+            or (
+                self.password is not None
+                and len(self.password.get_secret_value().encode()) > 255
+            )
+        ):
+            raise ValueError("SOCKS credentials must fit in 255 bytes")
+        return self
 
 
 ManagedOutboundConfig = Annotated[

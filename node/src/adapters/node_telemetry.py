@@ -13,6 +13,7 @@ _PROTOCOL_LABELS = {
     "vmess": "VMess",
     "trojan": "Trojan",
     "hysteria2": "Hysteria2",
+    "tuic": "TUIC",
     "shadowsocks": "Shadowsocks",
 }
 _TRANSPORT_LABELS = {

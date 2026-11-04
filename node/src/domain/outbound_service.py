@@ -164,7 +164,11 @@ class OutboundService:
                     "password": value.obfs.password.get_secret_value(),
                 }
         else:
-            data = value.model_dump(exclude={"auth_users"}, exclude_none=True)
+            data = value.model_dump(
+                exclude={"auth_users", "password"}, exclude_none=True
+            )
+            if value.password is not None:
+                data["password"] = value.password.get_secret_value()
         outbound = Outbound(tag=tag, **data)
         for index, current in enumerate(config.outbounds):
             if current.tag == tag:

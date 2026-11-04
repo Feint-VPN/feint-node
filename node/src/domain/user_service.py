@@ -22,6 +22,7 @@ PROTOCOL_TAGS: dict[str, str] = {
     "vmess": "vmess-ws-in",
     "trojan": "trojan-in",
     "hysteria2": "hysteria2-in",
+    "tuic": "tuic-in",
     "shadowsocks": "shadowsocks-in",
 }
 
@@ -33,6 +34,8 @@ def _adapt_user(username: str, uuid: str, password: str, proto: str) -> InboundU
         return InboundUser(name=username, uuid=uuid)
     if proto in ("trojan", "hysteria2", "shadowsocks"):
         return InboundUser(name=username, password=password)
+    if proto == "tuic":
+        return InboundUser(name=username, uuid=uuid, password=password)
     raise ValueError(f"Unknown protocol: {proto}")
 
 
@@ -62,7 +65,7 @@ def _published_protocols(
         outbound.tag in routed_outbounds and outbound.type == "socks"
         for outbound in config.outbounds
     ):
-        supported = {"vless", "hysteria2"}
+        supported = {"vless", "hysteria2", "tuic"}
     else:
         supported = set(PROTOCOL_TAGS)
     if enabled_protocols is not None:
@@ -150,6 +153,7 @@ class UserService:
         skip_existing: bool,
     ) -> list[dict]:
         config = await self._store.load()
+        backup = await self._store.backup()
 
         configured = [
             (protocol, inbound)
@@ -203,9 +207,7 @@ class UserService:
 
         _sync_v2ray_stats_users(config)
 
-        await commit_config(
-            self._store, self._runtime, config, await self._store.backup()
-        )
+        await commit_config(self._store, self._runtime, config, backup)
 
         logger.info("Users created", extra={"extra_fields": {"count": len(created)}})
         return created
@@ -213,6 +215,7 @@ class UserService:
     @serialized_mutation
     async def delete_user(self, username: str) -> None:
         config = await self._store.load()
+        backup = await self._store.backup()
 
         removed = False
         for tag in PROTOCOL_TAGS.values():
@@ -242,9 +245,7 @@ class UserService:
 
         _sync_v2ray_stats_users(config)
 
-        await commit_config(
-            self._store, self._runtime, config, await self._store.backup()
-        )
+        await commit_config(self._store, self._runtime, config, backup)
         logger.info("User deleted", extra={"extra_fields": {"username": username}})
 
     async def get_user(self, username: str) -> dict:
@@ -377,6 +378,14 @@ class UserService:
                 "protocol": "hysteria2",
                 "config_url": url,
                 "port": public_port,
+            }
+
+        if "tuic" in by_proto:
+            user, ib = by_proto["tuic"]
+            configs["tuic"] = {
+                "protocol": "tuic",
+                "config_url": self._url_builder.tuic_url(user.uuid or "", user.password or "", domain, ib.listen_port),
+                "port": ib.listen_port,
             }
 
         if "shadowsocks" in by_proto:
