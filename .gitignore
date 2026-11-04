@@ -213,6 +213,8 @@ __marimo__/
 .env.development
 .env.production
 interconnect.json
+.interconnect/
+.migration/
 
 guidelines/
 .kiro/

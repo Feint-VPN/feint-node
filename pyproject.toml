@@ -22,6 +22,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "ruff>=0.12",
+    "basedpyright>=1.39,<2.0",
 ]
 
 [tool.uv]
@@ -39,3 +40,21 @@ ignore = ["B008"]  # FastAPI dependency declarations intentionally call Depends.
 "node/src/adapters/node_telemetry.py" = ["BLE001"]
 "node/src/domain/user_service.py" = ["BLE001"]
 "node/src/adapters/traffic_tracker.py" = ["ASYNC240"]
+"acceptance/service_contract.py" = ["E402"]  # Executable scenario bootstraps node/src.
+"acceptance/hot_reload_contract.py" = ["E402"]
+"acceptance/cutover_contract.py" = ["E402"]
+
+[tool.basedpyright]
+include = ["node/src"]
+extraPaths = ["node/src"]
+pythonPlatform = "Linux"
+pythonVersion = "3.11"
+typeCheckingMode = "standard"
+reportMatchNotExhaustive = "error"
+reportUnnecessaryCast = "error"
+reportUnnecessaryComparison = "error"
+reportUnnecessaryIsInstance = "error"
+reportUnreachable = "error"
+reportIncompatibleMethodOverride = "error"
+reportImplicitAbstractClass = "error"
+reportAbstractUsage = "error"
