@@ -13,6 +13,7 @@ import binascii
 import json
 from urllib.parse import quote
 
+from adapters.subscription_settings import update_template
 from api.depends import get_user_service, verify_api_secret
 from api.schemas.subscription import (
     SubscriptionSettingsResponse,
@@ -33,6 +34,7 @@ _PROTO_DISPLAY: dict[str, str] = {
     "vmess": "VMess",
     "trojan": "Trojan",
     "hysteria2": "Hysteria2",
+    "tuic": "TUIC",
     "shadowsocks": "Shadowsocks",
 }
 
@@ -57,7 +59,7 @@ def _set_label(url: str, label: str) -> str:
 
 
 # Canonical order for the subscription payload
-_PROTO_ORDER = ["vless", "vmess", "trojan", "hysteria2", "shadowsocks"]
+_PROTO_ORDER = ["vless", "vmess", "trojan", "hysteria2", "tuic", "shadowsocks"]
 
 router = APIRouter(prefix="/sub", tags=["subscription"])
 
@@ -98,7 +100,7 @@ async def update_subscription_settings(
     body: SubscriptionSettingsUpdateRequest,
 ) -> SubscriptionSettingsResponse:
     try:
-        settings.update_sub_uri_template(body.sub_uri_template)
+        update_template(settings, body.sub_uri_template)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)

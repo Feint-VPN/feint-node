@@ -130,21 +130,24 @@ def _parse_user_stat_name(name: str) -> tuple[str | None, str | None]:
 async def fetch_v2ray_user_counters(
     address: str,
     request_timeout: float,
+    channel: grpc.aio.Channel | None = None,
 ) -> dict[str, dict[str, int]]:
+    if channel is None:
+        async with grpc.aio.insecure_channel(
+            _normalize_v2ray_api_address(address)
+        ) as owned:
+            return await fetch_v2ray_user_counters(address, request_timeout, owned)
     request = _QUERY_STATS_REQUEST()
     request.patterns.append("user>>>")
     request.regexp = False
     request.reset = False
 
-    async with grpc.aio.insecure_channel(
-        _normalize_v2ray_api_address(address)
-    ) as channel:
-        query_stats = channel.unary_unary(
-            "/v2ray.core.app.stats.command.StatsService/QueryStats",
-            request_serializer=lambda msg: msg.SerializeToString(),
-            response_deserializer=_QUERY_STATS_RESPONSE.FromString,
-        )
-        response = await query_stats(request, timeout=request_timeout)
+    query_stats = channel.unary_unary(
+        "/v2ray.core.app.stats.command.StatsService/QueryStats",
+        request_serializer=_QUERY_STATS_REQUEST.SerializeToString,
+        response_deserializer=_QUERY_STATS_RESPONSE.FromString,
+    )
+    response = await query_stats(request, timeout=request_timeout)
 
     counters: dict[str, dict[str, int]] = {}
     for stat in response.stat:
@@ -166,20 +169,23 @@ class TrafficTracker:
 
     def __init__(
         self,
-        v2ray_api_address: str | None = None,
-        state_path: str | None = None,
+        v2ray_api_address: str,
+        state_path: str,
+        additional_addresses: tuple[str, ...] = (),
     ) -> None:
-        self._address = _normalize_v2ray_api_address(
-            v2ray_api_address or os.getenv("V2RAY_API_ADDRESS", "127.0.0.1:10085")
+        self._address = _normalize_v2ray_api_address(v2ray_api_address)
+        self._additional_addresses = tuple(
+            dict.fromkeys(
+                _normalize_v2ray_api_address(item) for item in additional_addresses
+            )
         )
-        self._state_path = Path(
-            state_path or os.getenv("TRAFFIC_STATE_PATH", "/opt/sing-box/traffic.json")
-        )
+        self._state_path = Path(state_path)
 
         # Per-user totals: { username: {"upload": int, "download": int, "last_seen": iso8601 | None } }
         self._totals: dict[str, dict] = {}
         # Last seen live user counters returned by the V2Ray stats service.
-        self._live_last: dict[str, tuple[int, int]] = {}
+        self._live_last: dict[tuple[str, str], tuple[int, int]] = {}
+        self._legacy_users: set[str] = set()
 
         self._lock = asyncio.Lock()
         self._task: asyncio.Task | None = None
@@ -187,19 +193,27 @@ class TrafficTracker:
         self._dirty = False
         self._last_flush = 0.0
         self._available = False
+        self._channels: dict[str, grpc.aio.Channel] = {}
 
     # ------------------------------------------------------------------ public
 
     async def start(self) -> None:
         """Load persisted state and start the background poller."""
+        if self._task is not None and not self._task.done():
+            return
         await self._load_state()
-        if self._task is None or self._task.done():
-            self._stop.clear()
-            self._task = asyncio.create_task(self._run(), name="traffic-tracker")
-            logger.info(
-                "Traffic tracker started",
-                extra={"extra_fields": {"v2ray_api_address": self._address}},
-            )
+        for channel in self._channels.values():
+            await channel.close()
+        self._channels = {
+            address: grpc.aio.insecure_channel(address)
+            for address in dict.fromkeys((self._address, *self._additional_addresses))
+        }
+        self._stop.clear()
+        self._task = asyncio.create_task(self._run(), name="traffic-tracker")
+        logger.info(
+            "Traffic tracker started",
+            extra={"extra_fields": {"v2ray_api_address": self._address}},
+        )
 
     async def stop(self) -> None:
         """Stop the background poller and flush state to disk."""
@@ -212,7 +226,12 @@ class TrafficTracker:
             self._task.cancel()
         finally:
             self._task = None
-            await self._flush_state(force=True)
+            try:
+                await self._flush_state(force=True)
+            finally:
+                for channel in self._channels.values():
+                    await channel.close()
+                self._channels.clear()
 
     async def get_user(self, username: str) -> dict:
         """Return totals for a user, defaulting to zeroes when unseen."""
@@ -254,7 +273,9 @@ class TrafficTracker:
             if username in self._totals:
                 del self._totals[username]
                 self._dirty = True
-            self._live_last.pop(username, None)
+            for key in list(self._live_last):
+                if key[1] == username:
+                    del self._live_last[key]
 
     # ----------------------------------------------------------------- polling
 
@@ -291,21 +312,39 @@ class TrafficTracker:
 
     async def _poll_once(self) -> None:
         counters = await self._fetch_user_counters()
+        sources = [(self._address, counters)]
+        for address in self._additional_addresses:
+            if address != self._address:
+                sources.append(
+                    (
+                        address,
+                        await fetch_v2ray_user_counters(
+                            address, self.REQUEST_TIMEOUT, self._channels.get(address)
+                        ),
+                    )
+                )
         now_iso = datetime.now(tz=UTC).isoformat()
 
         async with self._lock:
             self._available = True
-            for user, current in counters.items():
+            for source, user, current in (
+                (source, user, current)
+                for source, counters in sources
+                for user, current in counters.items()
+            ):
                 upload = int(current.get("upload", 0))
                 download = int(current.get("download", 0))
 
-                prev = self._live_last.get(user, (0, 0))
+                key = (source, user)
+                prev = self._live_last.get(
+                    key, (upload, download) if user in self._legacy_users else (0, 0)
+                )
                 if upload < prev[0] or download < prev[1]:
                     prev = (0, 0)
 
                 d_up = max(0, upload - prev[0])
                 d_dn = max(0, download - prev[1])
-                self._live_last[user] = (upload, download)
+                self._live_last[key] = (upload, download)
 
                 entry = self._totals.setdefault(
                     user, {"upload": 0, "download": 0, "last_seen": None}
@@ -320,9 +359,16 @@ class TrafficTracker:
                     # a user, even if the current counters are zero.
                     entry["last_seen"] = now_iso
                     self._dirty = True
+            if self._legacy_users:
+                # Legacy totals have no source checkpoint. Establish a baseline
+                # without adding the core's historical counters a second time.
+                self._legacy_users.clear()
+                self._dirty = True
 
     async def _fetch_user_counters(self) -> dict[str, dict[str, int]]:
-        return await fetch_v2ray_user_counters(self._address, self.REQUEST_TIMEOUT)
+        return await fetch_v2ray_user_counters(
+            self._address, self.REQUEST_TIMEOUT, self._channels.get(self._address)
+        )
 
     # --------------------------------------------------------------- persistence
 
@@ -349,6 +395,20 @@ class TrafficTracker:
             }
         async with self._lock:
             self._totals = cleaned
+            sources = data.get("counters")
+            self._legacy_users = set(cleaned) if sources is None else set()
+            if isinstance(sources, dict):
+                self._live_last = {
+                    (address, user): (values[0], values[1])
+                    for address, users in sources.items()
+                    if address in (self._address, *self._additional_addresses)
+                    and isinstance(users, dict)
+                    for user, values in users.items()
+                    if isinstance(user, str)
+                    and isinstance(values, list)
+                    and len(values) == 2
+                    and all(type(value) is int and value >= 0 for value in values)
+                }
 
     async def _flush_state(self, force: bool = False) -> None:
         loop = asyncio.get_event_loop()
@@ -360,31 +420,51 @@ class TrafficTracker:
                 return
 
         async with self._lock:
-            snapshot = {"users": {u: dict(v) for u, v in self._totals.items()}}
+            counters = {}
+            for (source, user), values in self._live_last.items():
+                counters.setdefault(source, {})[user] = list(values)
+            snapshot = {
+                "users": {u: dict(v) for u, v in self._totals.items()},
+                "counters": counters,
+            }
             self._dirty = False
-        self._last_flush = now
 
+        writer = asyncio.create_task(asyncio.to_thread(self._write_state, snapshot))
         try:
-            self._state_path.parent.mkdir(parents=True, exist_ok=True)
-            fd, tmp = tempfile.mkstemp(
-                dir=self._state_path.parent, prefix=".traffic_", suffix=".tmp"
-            )
             try:
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    json.dump(snapshot, f, ensure_ascii=False)
-                    f.flush()
-                    os.fsync(f.fileno())
-                os.replace(tmp, self._state_path)
-                with suppress(OSError):
-                    os.chmod(self._state_path, 0o600)
-            except Exception:
-                if os.path.exists(tmp):
-                    os.unlink(tmp)
+                await asyncio.shield(writer)
+            except asyncio.CancelledError:
+                # A thread cannot be cancelled; finish its replace before stop
+                # writes the final snapshot to the same path.
+                with suppress(Exception):
+                    await writer
                 raise
         except OSError as exc:
+            self._dirty = True
             logger.warning(
                 "Failed to persist traffic state",
                 extra={
                     "extra_fields": {"path": str(self._state_path), "error": str(exc)}
                 },
             )
+        except BaseException:
+            self._dirty = True
+            raise
+        else:
+            self._last_flush = now
+
+    def _write_state(self, snapshot: dict) -> None:
+        self._state_path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(
+            dir=self._state_path.parent, prefix=".traffic_", suffix=".tmp"
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as file:
+                json.dump(snapshot, file, ensure_ascii=False)
+                file.flush()
+                os.fsync(file.fileno())
+            os.replace(tmp, self._state_path)
+            with suppress(OSError):
+                os.chmod(self._state_path, 0o600)
+        finally:
+            Path(tmp).unlink(missing_ok=True)

@@ -23,6 +23,10 @@ services:
       - CLASH_API_URL=${CLASH_API_URL:-http://host.docker.internal:9090}
       - V2RAY_API_ADDRESS=${V2RAY_API_ADDRESS:-host.docker.internal:10085}
       - TRAFFIC_STATE_PATH=/opt/sing-box/traffic.json
+      - TUIC_CONTAINER_NAME=${TUIC_CONTAINER_NAME:-}
+      - TUIC_CONFIG_PATH=${TUIC_CONFIG_PATH:-/opt/sing-box/tuic.json}
+      - TUIC_STATS_LISTEN=${TUIC_STATS_LISTEN:-127.0.0.1:10086}
+      - TUIC_STATS_ADDRESS=${TUIC_STATS_ADDRESS:-}
       - RATHOLE_CONFIG_PATH=/opt/relay/rathole.toml
       - RATHOLE_STATE_PATH=/opt/relay/state.json
       - RATHOLE_CONTAINER_NAME=${RATHOLE_CONTAINER_NAME:-feint-rathole}
@@ -49,6 +53,22 @@ services:
       - certbot-certs:/etc/letsencrypt:ro
     command: ${VPN_RUNTIME_COMMAND:-run -c /opt/sing-box/config.json}
     restart: unless-stopped
+
+  tuic:
+    profiles: [tuic]
+    image: ${TUIC_IMAGE:-ghcr.io/feint-vpn/feint-sing-box:v1.13.19-feint.2}
+    container_name: ${TUIC_CONTAINER_NAME:-feint-tuic}
+    user: "1000:1000"
+    network_mode: host
+    volumes:
+      - sing-box-data:/opt/sing-box:ro
+      - certbot-certs:/etc/letsencrypt:ro
+    command: run -c /opt/sing-box/tuic.json
+    restart: unless-stopped
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   certbot:
     image: certbot/certbot:latest

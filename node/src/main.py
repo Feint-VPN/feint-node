@@ -15,6 +15,7 @@ from api.depends import (
     is_valid_api_secret,
     verify_api_secret,
 )
+from api.errors import register_error_handlers
 from api.routers import outbound, reverse, stats, sub, user
 from api.schemas.system import (
     NodeAvailability,
@@ -23,6 +24,8 @@ from api.schemas.system import (
     NodeStatus,
     NodeStatusResponse,
 )
+from api.services import Services
+from api.startup import startup_errors
 from domain.ports import IContainerRuntime
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, Response
@@ -40,22 +43,23 @@ async def lifespan(app: FastAPI):
     logger.info("VPN Node v2 starting up")
 
     # Verify startup requirements
-    success, errors = settings.validate_startup_requirements()
+    errors = startup_errors(settings)
 
-    if not success:
+    if errors:
         for error in errors:
             logger.warning("Startup check failed: %s", error)
     else:
         logger.info("Startup validation passed")
 
-    logger.info("Application startup complete")
-
-    tracker = get_traffic_tracker()
+    services = Services(settings)
+    app.state.services = services
+    tracker = services.tracker
     try:
         await tracker.start()
     except Exception:
         logger.warning("Failed to start traffic tracker", exc_info=True)
 
+    logger.info("Application startup complete")
     try:
         yield
     finally:
@@ -63,6 +67,9 @@ async def lifespan(app: FastAPI):
             await tracker.stop()
         except Exception:
             logger.warning("Failed to stop traffic tracker cleanly", exc_info=True)
+        finally:
+            await services.close()
+            del app.state.services
         logger.info("VPN Node v2 shutting down")
 
 
@@ -182,6 +189,7 @@ async def log_requests(request: Request, call_next):
 
 
 # Register routers
+register_error_handlers(app)
 app.include_router(user.router)
 app.include_router(outbound.router)
 app.include_router(reverse.router)

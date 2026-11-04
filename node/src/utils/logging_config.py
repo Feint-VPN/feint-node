@@ -3,10 +3,11 @@
 import json
 import logging
 import logging.config
-import os
 import re
 from datetime import UTC, datetime
 from typing import Final
+
+from utils.settings import settings
 
 _SENSITIVE_PATTERNS: Final[list[tuple[re.Pattern[str], str]]] = [
     (
@@ -135,7 +136,7 @@ class JSONFormatter(logging.Formatter):
 
 def configure_logging(log_level: str | None = None) -> None:
     """Configure structured JSON logging. Call once at startup."""
-    level = (log_level or os.getenv("LOG_LEVEL", "INFO")).upper()
+    level = (log_level or settings.LOG_LEVEL).upper()
     if level not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
         level = "INFO"
 

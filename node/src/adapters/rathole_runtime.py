@@ -36,7 +36,11 @@ class RatholeRuntime:
         self.public_key = public_key
         self._proxy_port = proxy_port
         self._timeout = timeout
-        self._client = client or docker.from_env()
+        self._client = client
+
+    async def close(self) -> None:
+        if self._client is not None:
+            await asyncio.to_thread(self._client.close)
 
     async def configure(self, value: ReverseTunnelConfig) -> dict[str, Any]:
         if isinstance(value, ReverseServerConfig) and not self._private_key:
@@ -74,6 +78,8 @@ class RatholeRuntime:
 
     def _restart(self) -> None:
         try:
+            if self._client is None:
+                self._client = docker.from_env()
             container = self._client.containers.get(self._container_name)
             container.restart(timeout=self._timeout)
         except (DockerException, NotFound) as error:
