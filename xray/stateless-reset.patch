@@ -1,0 +1,10 @@
+diff --git a/transport/internet/hysteria/hub.go b/transport/internet/hysteria/hub.go
+--- a/transport/internet/hysteria/hub.go
++++ b/transport/internet/hysteria/hub.go
+@@ -290,1 +290,5 @@
+-	tr := &quic.Transport{Conn: pktConn}
++	tr, err := newServerTransport(pktConn)
++	if err != nil {
++		_ = pktConn.Close()
++		return nil, err
++	}

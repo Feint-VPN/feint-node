@@ -1,0 +1,37 @@
+diff --git a/transport/internet/hysteria/hub.go b/transport/internet/hysteria/hub.go
+--- a/transport/internet/hysteria/hub.go
++++ b/transport/internet/hysteria/hub.go
+@@ -264,6 +264,7 @@
+ 	quicConfig := &quic.Config{
++		InitialPacketSize:              1200,
+ 		InitialStreamReceiveWindow:     quicParams.InitStreamReceiveWindow,
+ 		MaxStreamReceiveWindow:         quicParams.MaxStreamReceiveWindow,
+ 		InitialConnectionReceiveWindow: quicParams.InitConnReceiveWindow,
+ 		MaxConnectionReceiveWindow:     quicParams.MaxConnReceiveWindow,
+ 		MaxIdleTimeout:                 time.Duration(quicParams.MaxIdleTimeout) * time.Second,
+diff --git a/transport/internet/hysteria/dialer.go b/transport/internet/hysteria/dialer.go
+--- a/transport/internet/hysteria/dialer.go
++++ b/transport/internet/hysteria/dialer.go
+@@ -85,6 +85,7 @@
+ 	quicConfig := &quic.Config{
++		InitialPacketSize:              1200,
+ 		InitialStreamReceiveWindow:     quicParams.InitStreamReceiveWindow,
+ 		MaxStreamReceiveWindow:         quicParams.MaxStreamReceiveWindow,
+ 		InitialConnectionReceiveWindow: quicParams.InitConnReceiveWindow,
+ 		MaxConnectionReceiveWindow:     quicParams.MaxConnReceiveWindow,
+ 		MaxIdleTimeout:                 time.Duration(quicParams.MaxIdleTimeout) * time.Second,
+diff --git a/transport/internet/hysteria/congestion/bbr/bbr_sender.go b/transport/internet/hysteria/congestion/bbr/bbr_sender.go
+--- a/transport/internet/hysteria/congestion/bbr/bbr_sender.go
++++ b/transport/internet/hysteria/congestion/bbr/bbr_sender.go
+@@ -491,9 +491,8 @@
+ 	if b.debug {
+ 		b.debugPrint("Max Datagram Size: %d", s)
+ 	}
+-	if s < b.maxDatagramSize {
+-		panic(fmt.Sprintf("congestion BUG: decreased max datagram size from %d to %d", b.maxDatagramSize, s))
+-	}
++	// QUIC can reduce the size after installing BBR or after a path change.
++	// Rescale packet-sized windows for decreases as well as increases.
+ 	oldMinCongestionWindow := b.minCongestionWindow
+ 	oldInitialCongestionWindow := b.initialCongestionWindow
+ 	b.rescalePacketSizedWindows(s)
