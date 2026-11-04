@@ -27,15 +27,9 @@ def main() -> None:
     )
 
     import uvicorn
-    from adapters.singbox_file_store import SingBoxFileStore
-    from adapters.url_builder import UrlBuilder
     from adapters.xray_config import render_xray_config
-    from api.depends.outbound import get_outbound_service
-    from api.depends.runtime import get_container_runtime
-    from api.depends.user import get_user_service
-    from domain.outbound_service import OutboundService
-    from domain.user_service import UserService
     from main import app
+    from utils.settings import settings
 
     with tempfile.TemporaryDirectory(prefix="feint-route-sub-") as directory:
         path = Path(directory) / "config.json"
@@ -96,23 +90,17 @@ def main() -> None:
             },
         }
         path.write_text(json.dumps(config), encoding="utf-8")
-        store = SingBoxFileStore(str(path), str(Path(directory) / "backups"))
-        service = UserService(
-            store,
-            get_container_runtime(),
-            UrlBuilder("test-public-key", "test-short-id", "example.com"),
-            published_protocols=frozenset({"hysteria2"}),
-            hysteria2_public_port=443,
-        )
-        app.dependency_overrides[get_user_service] = lambda: service
-        outbound_service = OutboundService(store, get_container_runtime())
-        app.dependency_overrides[get_outbound_service] = lambda: outbound_service
+        settings.CONFIG_PATH = str(path)
+        settings.BACKUP_DIR = str(Path(directory) / "backups")
+        settings.TRAFFIC_STATE_PATH = str(Path(directory) / "traffic.json")
+        settings.ENV_FILE_PATH = Path(directory) / "settings.env"
+        settings.V2RAY_API_ADDRESS = "127.0.0.1:1"
         with socket.socket() as probe:
             probe.bind(("127.0.0.1", 0))
             port = probe.getsockname()[1]
         server = uvicorn.Server(
             uvicorn.Config(
-                app, host="127.0.0.1", port=port, log_level="error", lifespan="off"
+                app, host="127.0.0.1", port=port, log_level="error", lifespan="on"
             )
         )
         thread = threading.Thread(target=server.run, daemon=True)
@@ -124,6 +112,33 @@ def main() -> None:
                 time.sleep(0.05)
             assert server.started
             client = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+            def expect_error(
+                method: str,
+                route: str,
+                expected: int,
+                body=None,
+                secret="local-acceptance-secret",
+            ):
+                try:
+                    client.open(
+                        urllib.request.Request(
+                            f"http://127.0.0.1:{port}{route}",
+                            data=json.dumps(body).encode()
+                            if body is not None
+                            else None,
+                            headers={
+                                "Content-Type": "application/json",
+                                "X-API-Secret": secret,
+                            },
+                            method=method,
+                        )
+                    )
+                except urllib.error.HTTPError as error:
+                    assert error.code == expected, (route, error.code)
+                    payload = error.read()
+                    return json.loads(payload) if payload else None
+                raise AssertionError(f"{method} {route} must return {expected}")
 
             def request(
                 method: str, route: str, body: dict, expected: int = 204
@@ -188,6 +203,33 @@ def main() -> None:
             before = sorted((Path(directory) / "backups").glob("config_*.json"))
             request("POST", "/users", {"users": [{"username": "new-user"}]}, 200)
             assert sorted((Path(directory) / "backups").glob("config_*.json")) == before
+            expect_error("POST", "/user", 409, {"username": "new-user"})
+            expect_error("GET", "/user/missing", 404)
+            expect_error("DELETE", "/user/missing", 404)
+            expect_error("GET", "/user/missing/configs?server_domain=node.test", 404)
+            expect_error("POST", "/users", 422, {"users": []})
+            expect_error("DELETE", "/outbound/new-route", 409)
+            expect_error("DELETE", "/outbound/missing", 404)
+            expect_error(
+                "POST", "/outbound/new-route/users", 404, {"users": ["missing"]}
+            )
+            expect_error("GET", "/users", 401, secret="wrong")
+            settings.HIDE_ENDPOINTS = True
+            assert expect_error("GET", "/users", 404, secret="wrong") is None
+            assert expect_error("GET", "/unknown", 404) is None
+            settings.HIDE_ENDPOINTS = False
+
+            # A real configuration failure must be translated without leaking its contents.
+            snapshot = path.read_bytes()
+            empty = json.loads(snapshot)
+            empty["inbounds"] = []
+            path.write_text(json.dumps(empty), encoding="utf-8")
+            try:
+                assert expect_error("POST", "/user", 500, {"username": "failure"}) == {
+                    "detail": "Node configuration update failed"
+                }
+            finally:
+                path.write_bytes(snapshot)
             for name in users:
                 with client.open(
                     f"http://127.0.0.1:{port}/sub/{name}?server_domain=ru.example"
@@ -208,9 +250,12 @@ def main() -> None:
         finally:
             server.should_exit = True
             thread.join(timeout=5)
-            app.dependency_overrides.clear()
+            assert not thread.is_alive(), "API lifespan did not finish"
+            assert not hasattr(app.state, "services"), (
+                "Application dependencies were not released"
+            )
     print(
-        "Route reassignment is exclusive; both users receive one HY2 subscription link"
+        "PASS HTTP: exclusive routes, HY2 links, bulk idempotency, 401/404/409/422/500, lifespan cleanup"
     )
 
 

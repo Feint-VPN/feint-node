@@ -12,6 +12,7 @@ import json
 import os
 import secrets
 import socket
+import struct
 import subprocess
 import tempfile
 import time
@@ -21,7 +22,7 @@ import uuid
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from interconnect import check_public_udp
+from interconnect import check_public_udp, recv_exact
 
 ROOT = Path(__file__).resolve().parents[1]
 SINGBOX = os.environ.get(
@@ -136,8 +137,20 @@ def exercise(
             try:
                 last = api("GET", "/status")
                 if last["status"] == "ok":
+                    if core == "xray":
+                        run(
+                            *command,
+                            "exec",
+                            "-T",
+                            "vpn-node-api",
+                            "python",
+                            "-c",
+                            "import asyncio,os; from adapters.xray_control import XrayControl; "
+                            "asyncio.run(XrayControl(os.environ['V2RAY_API_ADDRESS']).outbound_tags())",
+                            timeout=10,
+                        )
                     return
-            except (OSError, AssertionError):
+            except (OSError, AssertionError, RuntimeError):
                 pass
             time.sleep(1)
         raise AssertionError(f"{core} did not become healthy: {last}")
@@ -223,6 +236,8 @@ def exercise(
                 "0",
                 "-e",
                 f"XRAY_REALITY_MIN_CLIENT_VERSION={min_client_version}",
+                "-e",
+                "XRAY_HOT_RELOAD=true",
                 "-v",
                 mount,
                 "--entrypoint",
@@ -232,6 +247,7 @@ def exercise(
                 "adapters.xray_config",
                 "/state/config.json",
                 "/state/xray.json",
+                "127.0.0.1:10085",
             )
         env |= {
             "API_PORT": str(api_port),
@@ -247,7 +263,11 @@ def exercise(
             "VPN_RUNTIME_CONTAINER_NAME": runtime_name,
             "SINGBOX_CONTAINER_NAME": runtime_name,
             "XRAY_CONFIG_PATH": "/state/xray.json",
-            "V2RAY_API_ADDRESS": "sing-box:10085",
+            "XRAY_HOT_RELOAD": "true" if core == "xray" else "false",
+            "XRAY_API_LISTEN": "127.0.0.1:10085" if core == "xray" else "0.0.0.0:10085",
+            "V2RAY_API_ADDRESS": "127.0.0.1:10085"
+            if core == "xray"
+            else "sing-box:10085",
             "TRAFFIC_STATE_PATH": "/state/traffic.json",
             "ENV_FILE_PATH": "/state/settings.env",
             "SUB_URI_TEMPLATE": "Feint | {Protocol} | {username}",
@@ -275,7 +295,11 @@ def exercise(
                     "image": image,
                     "user": "1000:1000",
                     "group_add": [str(os.stat("/var/run/docker.sock").st_gid)],
-                    "volumes": [mount, "/var/run/docker.sock:/var/run/docker.sock"],
+                    "volumes": [
+                        mount,
+                        f"{state}:/opt/sing-box",
+                        "/var/run/docker.sock:/var/run/docker.sock",
+                    ],
                     "env_file": [str(root / ".env.local")],
                     "ports": [f"127.0.0.1:{api_port}:{api_port}"],
                     "command": [
@@ -289,6 +313,13 @@ def exercise(
                 },
             },
         }
+        if core == "xray":
+            # The API reaches private control through the disposable core's
+            # network namespace; do not expose write-capable gRPC on every NIC.
+            runtime_service = compose["services"]["sing-box"]
+            api_service = compose["services"]["vpn-node-api"]
+            runtime_service["ports"] = api_service.pop("ports")
+            api_service["network_mode"] = "service:sing-box"
         compose_path = root / "docker-compose.yml"
         write_json(compose_path, compose)
         command = ("docker", "compose", "-f", str(compose_path))
@@ -440,6 +471,64 @@ def exercise(
                 )
                 assert "Example Domain" in page
                 check_public_udp(socks_port)
+                if core == "xray" and outbound["type"] == "hysteria2":
+                    api(
+                        "PUT",
+                        "/outbound/hot-test",
+                        {"type": "socks", "server": "127.0.0.1", "server_port": 39083},
+                        expected=204,
+                    )
+                    run("docker", "restart", client_name)
+                    time.sleep(1)
+                    started = run(
+                        "docker",
+                        "inspect",
+                        runtime_name,
+                        "--format",
+                        "{{.State.StartedAt}}",
+                    )
+                    # Keep one TCP DNS connection across user/route mutations.
+                    with socket.create_connection(
+                        ("127.0.0.1", socks_port), timeout=10
+                    ) as stream:
+                        stream.sendall(b"\x05\x01\x00")
+                        assert recv_exact(stream, 2) == b"\x05\x00"
+                        stream.sendall(b"\x05\x01\x00\x01\x01\x01\x01\x01\x00\x35")
+                        assert recv_exact(stream, 4) == b"\x05\x00\x00\x01"
+                        recv_exact(stream, 6)
+                        for index in range(9):
+                            if index:
+                                probe = f"hot-user-{index - 1}"
+                                api("POST", "/users", {"users": [{"username": probe}]})
+                                api(
+                                    "PUT",
+                                    f"/outbound/hot-test/user/{probe}",
+                                    expected=204,
+                                )
+                            query = (
+                                struct.pack("!H", index)
+                                + b"\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00"
+                            )
+                            query += b"\x07example\x03com\x00\x00\x01\x00\x01"
+                            stream.sendall(struct.pack("!H", len(query)) + query)
+                            size = struct.unpack("!H", recv_exact(stream, 2))[0]
+                            answer = recv_exact(stream, size)
+                            assert answer[:2] == struct.pack("!H", index)
+                            check_public_udp(socks_port)
+                    assert (
+                        run(
+                            "docker",
+                            "inspect",
+                            runtime_name,
+                            "--format",
+                            "{{.State.StartedAt}}",
+                        )
+                        == started
+                    )
+                    print(
+                        "PASS hot registration/routing: 8 users, same TCP stream + UDP, 0 core restarts",
+                        flush=True,
+                    )
                 run("docker", "rm", "-f", client_name)
                 print(
                     f"PASS {core}/{outbound['type']}: subscription -> HTTPS + UDP",
@@ -459,8 +548,14 @@ def exercise(
             ready()
             assert (
                 api("GET", "/user/acceptance-user/stats")["total_bytes"]
-                >= traffic["total_bytes"]
+                == traffic["total_bytes"]
             )
+            if core == "xray":
+                for index in range(8):
+                    api("DELETE", f"/user/hot-user-{index}")
+                    ready()
+                api("DELETE", "/outbound/hot-test", expected=204)
+                ready()
             for route in ("first", "second"):
                 api(
                     "PUT",
