@@ -213,6 +213,8 @@ __marimo__/
 .env.development
 .env.production
 interconnect.json
+.interconnect/
+.migration/
 
 guidelines/
 .kiro/
@@ -221,3 +223,19 @@ guidelines/
 test-client/
 admin/
 .acceptance-*/
+
+# Private runtime inputs and recovery material
+*.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+*.age
+*.dump
+*.archive
+*.private*
+secrets/
