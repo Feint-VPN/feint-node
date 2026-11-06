@@ -71,7 +71,7 @@ TCP `443` available for a web server.
 
 ```bash
 cd /opt/vpn-node
-sudo bash scripts/diagnose.sh
+sudo python3 scripts/cli.py diagnose
 ```
 
 ---
@@ -110,7 +110,7 @@ curl -sk -X PUT https://vpn.example.com:8337/sub/settings \
 If you changed `.env.local` directly, restart the API:
 
 ```bash
-docker compose up -d --force-recreate vpn-node-api
+python3 scripts/cli.py compose up -d --force-recreate vpn-node-api
 ```
 
 Subscription URL for the user:
@@ -170,19 +170,19 @@ All write endpoints require the `X-API-Secret` header.
 **Container won't start**
 
 ```bash
-docker compose logs vpn-node-api --tail 50
+python3 scripts/cli.py compose logs vpn-node-api --tail 50
 ```
 
 **sing-box config rejected**
 
 ```bash
-docker compose logs sing-box --tail 50
+python3 scripts/cli.py compose logs sing-box --tail 50
 ```
 
 **Certificate not issued**
 
 ```bash
-docker compose logs certbot
+python3 scripts/cli.py compose logs certbot
 # Make sure port 80 is open and the domain resolves to this IP
 ```
 
@@ -199,8 +199,8 @@ docker compose logs certbot
 ```bash
 cd /opt/vpn-node
 git pull
-docker compose pull sing-box vpn-node-api
-docker compose up -d --force-recreate sing-box vpn-node-api
+python3 scripts/cli.py compose pull sing-box vpn-node-api
+python3 scripts/cli.py compose up -d --force-recreate sing-box vpn-node-api
 ```
 
 sing-box config and user data are stored in a Docker volume — they survive rebuilds.

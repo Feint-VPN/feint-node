@@ -1,152 +1,72 @@
-# Deployment scripts
+# Node operator CLI
 
-## Port lifecycle
+Use one entry point from any working directory:
 
-`ports.sh` is the supported interface for inspecting and changing deployment
-ports. The single source of truth is `.env.local`; do not hand-edit
-`docker-compose.yml` or the persisted sing-box JSON to change ports.
-
-```bash
-# Inspect the deployed configuration and listeners
-bash scripts/ports.sh show
-bash scripts/ports.sh check
-
-# Choose individual ports, then apply the complete change
-bash scripts/ports.sh set --api 8337 --vless 28473 --apply
-
-# Or choose a new checked random plan
-bash scripts/ports.sh randomize --apply
+```sh
+python /opt/vpn-node/scripts/cli.py list
+python /opt/vpn-node/scripts/cli.py list --json
+python /opt/vpn-node/scripts/cli.py diagnose --help
 ```
 
-`set` and `randomize` validate port numbers, prevent duplicate assignments for
-the same transport, and report a process already listening on a requested port.
-They never kill a process to make a port available.
+Commands forward arguments, stdin and the child exit status without interpreting
+credentials. Linux host commands still require Bash and their usual privileges.
+Listing and help do not authorize executing an operation on production.
 
-Without `--apply`, the command only prints the validated plan and leaves the
-deployment unchanged. With `--apply`, it recreates the API container, updates
-the persisted sing-box configuration, restarts sing-box, checks `/status`, and
-restores the previous env and sing-box configuration if any step fails.
+## Common operations
 
-After every port change, distribute fresh client configuration to users.
+Run these examples from the checkout root:
 
-## Installation
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/Feint-VPN/feint-node/main/install.sh | \
-  sudo bash -s -- --domain vpn.example.com --email admin@example.com
+```sh
+python scripts/cli.py diagnose
+python scripts/cli.py diagnose --logs 50
+python scripts/cli.py ports show
+python scripts/cli.py ports check
+python scripts/cli.py ports set --api 8337 --vless 28473 --apply
+python scripts/cli.py ports randomize --apply
+python scripts/cli.py compose ps
+python scripts/cli.py compose logs --tail=100 vpn-node-api
+python scripts/cli.py compose --dev up --build
 ```
 
-You can select the API port during installation:
+`ports set/randomize --apply`, `setup-ssh`, deployment and route commands change
+host state. Obtain rollout authority and a verified backup before using them.
+`subscription USER` prints connection credentials: do not save its output to
+public logs. `diagnose` is read-only; logs are opt-in and bounded to 100 lines.
 
-```bash
-sudo bash install.sh --domain vpn.example.com --email admin@example.com --api-port 8337
+`compose` explicitly sets the project directory and env file to the installation
+root. Do not invoke relocated YAML files without `--project-directory`: Docker
+would otherwise derive different project/volume names and relative input paths.
+Use `--dir PATH` before the Docker subcommand to select another installation.
+
+## Implementations
+
+| Directory | Commands |
+| --- | --- |
+| `lib/install/` | `install`, `setup-ssh` |
+| `lib/update/` | `update` |
+| `lib/runtime/` | `compose`, `ports`, `subscription`, `sync-config`, `udp-redirect`, hot-reload and TUIC overlays/canaries |
+| `lib/interconnect/` | Interconnect configuration, management, preparation, cutover and rollback |
+| `lib/diagnostics/` | Protocol probes, bounded WAN/chain tests and experimental route deployment |
+
+Implementations may call one another internally. They are not additional public
+entry points. Shared development stages remain in the sibling `pipeline`:
+
+```sh
+uv run --project ../pipeline python ../pipeline/scripts/context.py node
+uv run --project ../pipeline python ../pipeline/scripts/stage.py node --run --fresh
 ```
 
-SDK provisioning must select the SSH port up front. This makes installation
-non-interactive and leaves the SDK with the exact port to persist:
+Target-driven commands consume the pipeline inventory and explicit authority
+flags. Do not replace inventory with hosts, IPs, keys or credentials in source.
+`prepare-interconnect` is a remote worker with a target/files stdin envelope;
+call it through `pipeline server-test`, not directly on an arbitrary host.
 
-```bash
-sudo bash install.sh \
-  --domain vpn.example.com \
-  --email admin@example.com \
-  --new-ssh-port 220 \
-  --ssh-public-key "$(cat ~/.ssh/id_ed25519.pub)"
-```
+## Compatibility
 
-The installer validates the chosen API port and selects available protocol
-ports. It also requires TCP port 80 for the standalone Let's Encrypt HTTP
-challenge. If port 80 is in use, installation stops and identifies the
-listener; it does not interrupt the existing service. Free port 80 or use a
-different certificate arrangement before installing. Webroot and DNS ACME
-modes are not implemented yet.
+Root `install.sh` remains a standalone Bash bootstrap and root `update.sh` remains
+the installed updater entry point. The installer can run before Python exists.
+The updater reselects old/new Compose paths after checkout and rollback.
+Existing server files and systemd units are not changed by this repository move.
 
-## SSH
-
-The installer always moves SSH to a checked non-default port, installs the
-provided public key and disables password authentication. To run the same flow
-manually:
-
-```bash
-sudo ./scripts/setup-ssh.sh
-```
-
-Manual use confirms a second SSH session. SDK installation passes an explicit
-port and uses the non-interactive mode. Feint disables active UFW during SSH
-setup and does not manage host firewall rules afterwards.
-
-## Updates
-
-```bash
-sudo bash ./update.sh
-sudo bash ./update.sh --branch main
-```
-
-`update.sh` backs up `.env.local` and the deployed sing-box config, pulls the
-tracked code and published images, then synchronizes the deployed config with
-the updated template while preserving every inbound's users. The rendered
-candidate passes `sing-box check` before replacement. A failed rollout restores
-the previous commit, images, env and config.
-
-## Manual Docker Compose
-
-Compose interpolation needs `.env.local` explicitly. Use this form for manual
-operations:
-
-```bash
-docker compose --env-file .env.local ps
-docker compose --env-file .env.local logs -f vpn-node-api
-docker compose --env-file .env.local restart sing-box
-```
-
-## Diagnostics
-
-Run the read-only deployment checks before collecting individual logs:
-
-```bash
-sudo bash scripts/diagnose.sh
-sudo bash scripts/diagnose.sh --logs 50
-```
-
-The command checks configuration, containers, authenticated `/status`, the
-persisted sing-box config, listeners and SSH. It reports firewall state without
-changing it. Logs are opt-in, capped at 100 lines, and configured secrets are
-redacted.
-
-## Endpoint hiding
-
-New installs set `HIDE_ENDPOINTS=true`. Without the correct `X-API-Secret`,
-the API returns an empty `404` for both known and unknown paths, including the
-root and health endpoints. Keep this enabled unless public subscription URLs
-are required; those URLs cannot include the secret header.
-
-## Troubleshooting
-
-### A requested port is occupied
-
-```bash
-bash scripts/ports.sh check
-sudo ss -lntup
-```
-
-Leave the current owner running and choose another port:
-
-```bash
-bash scripts/ports.sh set --vless 28473 --apply
-```
-
-### Certificate issuance fails
-
-Confirm that the domain resolves to this server, TCP port 80 is reachable from
-the internet, and no local service owns it. The current installer relies on the
-standalone HTTP challenge, so an existing web server must be moved or
-reconfigured before issuance.
-
-### Inspect service health
-
-```bash
-docker compose --env-file .env.local ps
-docker compose --env-file .env.local logs --tail=100 vpn-node-api
-API_PORT=$(grep '^API_PORT=' .env.local | cut -d '=' -f2)
-API_SECRET=$(grep '^API_SECRET=' .env.local | cut -d '=' -f2)
-curl -sk -H "X-API-Secret: ${API_SECRET}" "https://127.0.0.1:${API_PORT}/health"
-```
+`update_tailscale.sh`, if present locally, is unrelated untracked work. It is not
+registered, moved, committed or executed by this change.

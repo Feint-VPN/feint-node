@@ -47,7 +47,7 @@ normal Docker build caching on later updates.
 
 ```bash
 cd /opt/vpn-node
-sudo ./scripts/setup-ssh.sh
+sudo python3 scripts/cli.py setup-ssh
 ```
 
 The SSH script moves SSH to a checked non-default port, installs an authorized
@@ -57,10 +57,10 @@ second SSH session when prompted. Feint does not manage host firewall rules.
 ## 4. Verify the node
 
 ```bash
-bash scripts/ports.sh show
-bash scripts/ports.sh check
-docker compose --env-file .env.local ps
-docker compose --env-file .env.local logs --tail=100 vpn-node-api
+python3 scripts/cli.py ports show
+python3 scripts/cli.py ports check
+python3 scripts/cli.py compose ps
+python3 scripts/cli.py compose logs --tail=100 vpn-node-api
 ```
 
 Check the API locally:
@@ -78,13 +78,13 @@ hand.
 
 ```bash
 # Show ports and any listeners that already use them
-bash scripts/ports.sh check
+python3 scripts/cli.py ports check
 
 # Apply a specific change
-bash scripts/ports.sh set --api 8337 --vless 28473 --apply
+python3 scripts/cli.py ports set --api 8337 --vless 28473 --apply
 
 # Or apply a completely new checked plan
-bash scripts/ports.sh randomize --apply
+python3 scripts/cli.py ports randomize --apply
 ```
 
 `--apply` validates the proposed plan, updates `.env.local`, synchronizes the
@@ -98,10 +98,10 @@ Run Compose with the runtime environment file so its variable substitutions use
 the deployed values:
 
 ```bash
-docker compose --env-file .env.local ps
-docker compose --env-file .env.local logs -f sing-box
+python3 scripts/cli.py compose ps
+python3 scripts/cli.py compose logs -f sing-box
 sudo bash ./update.sh
 ```
 
 `update.sh` keeps `.env.local`, including port assignments, API secret, and
-Docker group ID. It does not require local edits to `docker-compose.yml`.
+Docker group ID. It does not require local edits to `deploy/compose/base.yml`.

@@ -29,8 +29,8 @@ so resetting one core does not reset or duplicate the other core's traffic.
 
 ## Existing production versions
 
-`scripts/tuic_overlay.py` builds a minimal overlay of the installed API, avoiding
-deployment of unrelated development changes. `scripts/tuic_stage.py` snapshots
+`scripts/lib/runtime/tuic_overlay.py` builds a minimal overlay of the installed API, avoiding
+deployment of unrelated development changes. `scripts/lib/runtime/tuic_stage.py` snapshots
 the node config, Compose, environment, traffic state and container metadata,
 checks the candidate sing-box config, and stages TUIC without restarting services.
 These are explicit operator tools for the current Feint Compose adapter, not a
@@ -44,7 +44,7 @@ the existing public HTTPS subscription URLs, not only locally generated content.
 
 ## Acceptance and rollback
 
-Feed an actual SDK-generated technical TUIC URI to `scripts/probe_tuic.py` on
+Feed an actual SDK-generated technical TUIC URI to `scripts/lib/diagnostics/probe_tuic.py` on
 stdin; never put credentials in command arguments or logs. It verifies TLS,
 expected exit IP, HTTPS, UDP DNS, and rejected credentials with `--reject`.
 The client parser explicitly requests native QUIC UDP relay. Check SDK traffic

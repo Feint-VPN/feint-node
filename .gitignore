@@ -16,7 +16,9 @@ eggs/
 .eggs/
 lib/
 !/scripts/lib/
-!/scripts/lib/*.sh
+!/scripts/lib/*/
+!/scripts/lib/**/*.py
+!/scripts/lib/**/*.sh
 lib64/
 parts/
 sdist/

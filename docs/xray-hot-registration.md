@@ -49,7 +49,7 @@ Run the project's pipeline `stage node --run --through test --fresh`.
 Its contracts now include real gRPC user encoding, partial application
 rollback, live routing restoration and preserved hard-revocation semantics.
 
-The disposable `acceptance/runtime.py --core xray --vless-client xray` adds
+The disposable `tests/acceptance/runtime.py --core xray --vless-client xray` adds
 eight users and route assignments while holding one TCP DNS connection and
 checking UDP. It asserts unchanged Xray StartedAt, then checks counters,
 CRUD, route reassignment, restart persistence and configuration rollback.
@@ -58,16 +58,16 @@ This does not establish Discord quality on a representative client network.
 ## Narrow operational rollout
 
 1. Confirm a fresh off-host backup.
-2. `scripts/hot_reload_overlay.py` builds an overlay of the installed API;
+2. `scripts/lib/runtime/hot_reload_overlay.py` builds an overlay of the installed API;
    it preserves the installed renderer except control services/CLI wiring.
 3. Exercise that image in a disposable SW runtime stack first.
-4. `scripts/apply_hot_reload.py` saves rollback documents, freezes API writes,
+4. `scripts/lib/runtime/apply_hot_reload.py` saves rollback documents, freezes API writes,
    renders and validates the core configuration, restarts Xray once and
    recreates only the API. It does not change Tailscale or relay transports.
 5. Use the Compose files recorded in the API container's labels for subsequent
    explicit `-f` operations. An absent standard override is also populated;
    do not accidentally omit the hot-reload override during later deployments.
-6. `scripts/hot_reload_canary.py` provisions only node-local technical users,
+6. `scripts/lib/runtime/hot_reload_canary.py` provisions only node-local technical users,
    checks existing credentials and StartedAt, and probes HTTPS/UDP. These
    probe accounts have no SDK wallet; credentials are not printed or saved.
 

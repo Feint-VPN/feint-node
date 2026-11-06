@@ -432,15 +432,15 @@ listeners. An empty value publishes every configured protocol. If the public
 Hysteria2 port is forwarded to a different runtime port, set
 `HYSTERIA2_PUBLIC_PORT` to the client-facing UDP port.
 If a deployed node uses a NAT redirect instead of a native public listener,
-keep that redirect persistent. `scripts/udp_redirect.sh` and the deployment
-example `ops/probe/feint-hysteria2-redirect.service` do this for the current
+keep that redirect persistent. `scripts/lib/runtime/udp_redirect.sh` and the deployment
+example `deploy/systemd/feint-hysteria2-redirect.service` do this for the current
 RU node's UDP `443 → 36454` mapping. Remove the unit when Xray itself moves
 to UDP `443`.
 
 ### Private RU → GE interconnect (optional)
 
 The SDK can manage separate per-route sidecars with `NodeTransport.TAILSCALE`.
-It invokes `scripts/manage_interconnect.py` over trusted SSH, supplying peer
+It invokes `scripts/lib/interconnect/manage_interconnect.py` over trusted SSH, supplying peer
 credentials through stdin. This helper requires an already running Tailscale IPv4
 interface, picks free ports, authenticates the peer, and persists private state in
 `.interconnect/`. It does not alter Tailscale, the main runtime or the legacy
@@ -450,7 +450,7 @@ Only its own container and files are removed. Include `.interconnect/` in backup
 The helper uses `INTERCONNECT_IMAGE`, falling back to the installed `SINGBOX_IMAGE`;
 SDK-managed channels need this script on both nodes. No new HTTP API is required.
 
-`docker-compose.interconnect.yml` runs an independent sing-box process. It does
+`deploy/compose/interconnect.yml` runs an independent sing-box process. It does
 not replace or restart the node's Xray, rathole, or API containers. The exit
 listens **only on its Tailscale IPv4 address** and requires SOCKS credentials;
 the entry listens only on `127.0.0.1`. Entry-side UDP is carried over the
@@ -467,21 +467,21 @@ which the configurator deliberately rejects.
 On the GE exit, from the installed repository directory:
 
 ```bash
-sudo python3 scripts/configure_interconnect.py exit \
+sudo python3 scripts/cli.py configure-interconnect exit \
   --tailscale-address "$(tailscale ip -4)" --port 39085 \
   --username feint-interconnect \
   --password-file /root/feint-interconnect-password
-bash scripts/interconnect.sh up -d
+python3 scripts/cli.py interconnect up -d
 ```
 
 On the RU entry, use the **GE** Tailscale address and the same credential:
 
 ```bash
-sudo python3 scripts/configure_interconnect.py entry \
+sudo python3 scripts/cli.py configure-interconnect entry \
   --tailscale-address GE_TAILSCALE_IP --port 39085 --local-port 39083 \
   --username feint-interconnect \
   --password-file /root/feint-interconnect-password
-bash scripts/interconnect.sh up -d
+python3 scripts/cli.py interconnect up -d
 ```
 
 The exit reuses the installed RU GeoIP rule set and rejects private and RU
@@ -490,12 +490,12 @@ is the `server_port` for a managed SOCKS outbound on the RU node. Starting
 these containers alone does not move any user traffic; the SDK must explicitly
 assign users to that outbound. Keep the existing route until an isolated
 acceptance check confirms both TCP and UDP egress through GE. Stop just this
-optional component with `bash scripts/interconnect.sh stop`. It runs as a
+optional component with `python3 scripts/cli.py interconnect stop`. It runs as a
 separate Compose project, so a normal `update.sh` does not remove it as an
 orphan. The script resolves the node's existing data volume for the GeoIP file.
 
 For an existing managed SOCKS route, take a node-config backup before changing
-its loopback port. Copy `scripts/switch_interconnect_route.py` into the node API
+its loopback port. Copy `scripts/lib/interconnect/switch_interconnect_route.py` into the node API
 container and run it first with `--expected-port OLD_PORT --new-port NEW_PORT`
 to inspect the change. Add `--apply` only after the new listener passes TCP and
 UDP checks. The same command with the ports reversed is the rollback; it
@@ -503,7 +503,7 @@ preserves the route's current user set.
 
 ### Protocol connectivity probes
 
-`scripts/probe_protocols.py` fetches a real Feint subscription, starts an
+`scripts/lib/diagnostics/probe_protocols.py` fetches a real Feint subscription, starts an
 isolated Xray client for each listed VLESS or Hysteria2 URI, and checks both
 HTTPS egress and UDP DNS through its local SOCKS interface. It writes a JSON
 report and exits unsuccessfully if a published profile fails either check.
@@ -516,7 +516,7 @@ Run it from a separate host with Docker and a dedicated test subscription:
 
 ```bash
 export FEINT_PROBE_SUBSCRIPTION_URL='https://vpn.example.com/userapi/v1/sub/TEST-ACCESS-ID'
-python3 scripts/probe_protocols.py --status-file /var/lib/feint-probe/status.json --vantage external
+python3 scripts/cli.py probe --status-file /var/lib/feint-probe/status.json --vantage external
 ```
 
 The sample systemd service and timer are in `ops/probe/`. Install the probe
@@ -544,15 +544,15 @@ Use the canonical port command:
 
 ```bash
 cd /opt/vpn-node
-bash scripts/ports.sh show
-bash scripts/ports.sh check
-bash scripts/ports.sh randomize
+python3 scripts/cli.py ports show
+python3 scripts/cli.py ports check
+python3 scripts/cli.py ports randomize
 ```
 
 Apply selected ports atomically:
 
 ```bash
-bash scripts/ports.sh set --api 8337 --vless 28473 --apply
+python3 scripts/cli.py ports set --api 8337 --vless 28473 --apply
 ```
 
 Feint does not manage host firewall rules. Port changes only update the node
@@ -618,35 +618,36 @@ Requirements:
 Create the locked environment:
 
 ```powershell
-uv sync --locked --extra dev
+uv sync --project services/node --locked --extra dev
 ```
 
 Run quality checks:
 
 ```powershell
-uv run ruff format --check node/src
-uv run ruff check node/src
+uv run --project services/node ruff format --check --config services/node/pyproject.toml services/node/src services/node/tests tests scripts
+uv run --project services/node ruff check --config services/node/pyproject.toml services/node/src services/node/tests tests scripts
 ```
 
 Run the development container:
 
 ```bash
 cp .env.example .env.local
-docker compose -f docker-compose.dev.yml --env-file .env.local up --build
+python scripts/cli.py compose --dev up --build
 ```
 
-Production dependencies are in `node/requirements.txt`. Lint tools are isolated
-in `node/requirements-dev.txt` and the `dev` uv extra; they are not installed
+Production dependencies are in `services/node/requirements.txt`. Lint tools are isolated
+in `services/node/requirements-dev.txt` and the `dev` uv extra; they are not installed
 into the production image.
 
 ## 🛸 Deployment operations
 
-Always pass the environment file to manual Compose commands:
+Use the operator CLI: it supplies the installation root and environment file,
+preserving the existing Compose project and volume names:
 
 ```bash
-docker compose --env-file .env.local ps
-docker compose --env-file .env.local logs -f vpn-node-api sing-box
-docker compose --env-file .env.local restart vpn-node-api
+python scripts/cli.py compose ps
+python scripts/cli.py compose logs -f vpn-node-api sing-box
+python scripts/cli.py compose restart vpn-node-api
 ```
 
 During a planned sing-box stop or restart, `v1.13.19` may log
@@ -672,28 +673,37 @@ Additional operational references:
 
 ```text
 feint-node/
-├── node/
-│   ├── src/
-│   │   ├── api/          # FastAPI routers, dependencies and schemas
-│   │   ├── domain/       # Local user rules and infrastructure ports
-│   │   ├── adapters/     # sing-box, Docker, traffic and URL implementations
-│   │   ├── utils/        # Settings, crypto and structured logging
-│   │   └── main.py       # Application and lifespan
-│   ├── Dockerfile
-│   ├── requirements.txt
-│   └── requirements-dev.txt
-├── scripts/              # SSH, ports and deployment helpers
-├── sing-box/             # Runtime image assets
-├── templates/            # Versioned sing-box configuration template
-├── docker-compose.yml
-├── install.sh
-├── update.sh
-├── pyproject.toml
-└── uv.lock
+├── services/
+│   ├── node/
+│   │   ├── src/              # Existing API/domain/adapters/utils architecture
+│   │   ├── tests/            # API contracts and HTTP integration
+│   │   ├── templates/        # Canonical runtime templates and examples
+│   │   ├── Dockerfile
+│   │   ├── pyproject.toml
+│   │   └── uv.lock
+│   ├── xray/                 # Image, patches, source additions and Go tests
+│   ├── sing-box/             # Optional runtime image
+│   └── rathole/              # Reverse transport image
+├── tests/
+│   ├── contract/             # Operator, resource and interconnect contracts
+│   ├── integration/          # Disposable multi-component scenarios
+│   ├── acceptance/           # Published-runtime and subscription checks
+│   └── fixtures/configs/     # JSON test inputs, not executable scenarios
+├── scripts/
+│   ├── cli.py                # Single operator entry point
+│   └── lib/                  # install/update/runtime/interconnect/diagnostics
+├── deploy/
+│   ├── compose/              # base.yml, dev.yml, interconnect.yml
+│   └── systemd/              # Host probe and redirect units
+├── docs/
+├── static/
+├── install.sh                # Compatibility bootstrap
+└── update.sh                 # Compatibility entry point
 ```
 
-There is no parallel legacy router or service tree. `api`, `domain` and
-`adapters` are the only runtime path.
+The internal application architecture is unchanged. `ops/` has been split by
+responsibility between deployment units and diagnostic implementations. See
+[layout and compatibility](docs/repository-layout.md) and [operator commands](scripts/README.md).
 
 ## 🌑 Current boundaries
 
@@ -706,12 +716,17 @@ There is no parallel legacy router or service tree. `api`, `domain` and
 ## ✅ Quality
 
 ```bash
-uv sync --extra dev --frozen
-uv run --extra dev ruff check node/src acceptance scripts
-uv run --extra dev ruff format --check node/src acceptance scripts
-uv run --extra dev basedpyright
-uv run --extra dev python acceptance/service_contract.py
-uv run --extra dev python acceptance/route_subscription.py
+uv sync --project services/node --extra dev --frozen
+uv run --project ../pipeline python ../pipeline/scripts/stage.py node --run --fresh
+```
+
+The sibling `pipeline` runs lint, types, formatting, service/operator contracts
+and isolated Docker integrations using the node service's environment. It does
+not deploy to a server. For standalone static checks:
+
+```bash
+uv run --project services/node ruff check --config services/node/pyproject.toml services/node/src services/node/tests tests scripts
+uv run --project services/node basedpyright --project services/node
 ```
 
 `utils/settings.py` is the process configuration boundary (`BaseSettings`):
@@ -729,7 +744,7 @@ lazy so a missing daemon does not prevent the diagnostic API from starting.
 options from process configuration. Neither this separation nor the user-service
 typing changes the HTTP routes, credential format or rollback sequence.
 
-See [acceptance scenarios and release gates](acceptance/README.md) for actual
+See [acceptance scenarios and release gates](tests/README.md) for actual
 commands and coverage. Lint, local contract checks, live runtime acceptance and
 clean installation/update are separate gates; none implies the others passed.
 

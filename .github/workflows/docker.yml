@@ -2,7 +2,7 @@ name: Docker image
 
 on:
   push:
-    branches: [main, dev, "codex/**"]
+    branches: [main, dev, "feature/**", "release/**", "hotfix/**"]
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
@@ -48,7 +48,7 @@ jobs:
       - name: Build and publish
         uses: docker/build-push-action@v6
         with:
-          context: ./node
+          context: ./services/node
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.node-metadata.outputs.tags }}
           labels: ${{ steps.node-metadata.outputs.labels }}
@@ -69,7 +69,7 @@ jobs:
       - name: Build and publish sing-box
         uses: docker/build-push-action@v6
         with:
-          context: ./sing-box
+          context: ./services/sing-box
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.singbox-metadata.outputs.tags }}
           labels: ${{ steps.singbox-metadata.outputs.labels }}
@@ -89,7 +89,7 @@ jobs:
       - name: Build and publish rathole
         uses: docker/build-push-action@v6
         with:
-          context: ./rathole
+          context: ./services/rathole
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.rathole-metadata.outputs.tags }}
           labels: ${{ steps.rathole-metadata.outputs.labels }}
@@ -106,10 +106,10 @@ jobs:
             type=ref,event=branch
             type=sha,prefix=sha-
 
-      - name: Package official Xray binary with low-port capability
+      - name: Build patched Xray with low-port capability
         uses: docker/build-push-action@v6
         with:
-          context: ./xray
+          context: ./services/xray
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.xray-metadata.outputs.tags }}
           labels: ${{ steps.xray-metadata.outputs.labels }}
