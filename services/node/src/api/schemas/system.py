@@ -3,7 +3,7 @@
 from enum import StrEnum
 from typing import Literal
 
-from domain.telemetry import NodeProtocolTelemetry
+from models.telemetry import NodeProtocolTelemetry
 from pydantic import BaseModel, Field
 
 

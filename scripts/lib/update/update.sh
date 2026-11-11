@@ -140,7 +140,7 @@ sync_template() {
 
 prepare_runtime_config() {
     if [[ "$VPN_RUNTIME" == xray ]]; then
-        "${COMPOSE[@]}" exec -T vpn-node-api python -m adapters.xray_config \
+        "${COMPOSE[@]}" exec -T vpn-node-api python -c "import pathlib,runpy; runpy.run_module('runtime.xray.configuration' if pathlib.Path('/app/src/runtime/xray/configuration.py').is_file() else 'adapters.xray_config', run_name='__main__')" \
             "$CONFIG_PATH" "$XRAY_CONFIG_PATH" </dev/null
         "${COMPOSE[@]}" exec -T sing-box xray run -test \
             -config "$XRAY_CONFIG_PATH" </dev/null

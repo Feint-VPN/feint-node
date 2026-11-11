@@ -7,12 +7,14 @@ from pathlib import Path
 sys.path.insert(
     0, str(Path(__file__).resolve().parents[2] / "scripts/lib/interconnect")
 )
-sys.path.insert(
-    0, str(Path(__file__).resolve().parents[2] / "services/node/src/adapters")
-)
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "services/node/src"))
 
 from configure_interconnect import entry_config
 from prepare_interconnect import candidate, native_xray
+from runtime.xray import socks
+
+# Remote preparation supplies this single reviewed helper under a standalone name.
+sys.modules["xray_socks"] = socks
 
 original = entry_config(
     "100.64.0.2", 43001, 43002, "probe", "not-a-production-password"

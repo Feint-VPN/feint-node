@@ -7,6 +7,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from overlay_sources import stage_runtime_bridges, stage_support
+
 
 def command(*args: str) -> str:
     return subprocess.check_output(args, text=True)
@@ -33,8 +35,12 @@ def main() -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(source, encoding="utf-8")
 
-    for relative in ("adapters/docker_runtime.py", "adapters/xray_control.py"):
-        save(relative, (args.source / relative).read_text(encoding="utf-8"))
+    layered = stage_support(args.source, args.work)
+    if layered:
+        stage_runtime_bridges(args.work)
+    else:
+        for relative in ("adapters/docker_runtime.py", "adapters/xray_control.py"):
+            save(relative, (args.source / relative).read_text(encoding="utf-8"))
 
     source = read("adapters/xray_config.py")
     signature = "    hysteria2_compat_port: int | None = None,"
@@ -110,7 +116,8 @@ def main() -> None:
         encoding="utf-8",
     )
     shutil.copyfile(
-        args.source / "adapters/xray_control.py",
+        args.source
+        / ("runtime/xray/control.py" if layered else "adapters/xray_control.py"),
         args.work / "src/adapters/xray_control.py",
     )
     command("docker", "build", "-t", args.image, str(args.work))

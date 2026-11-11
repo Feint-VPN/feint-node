@@ -4,9 +4,9 @@ from typing import Annotated
 
 from api.depends import get_outbound_service, verify_api_secret
 from api.schemas.outbound import OutboundUsersRequest
-from domain.models import ManagedOutboundConfig
-from domain.outbound_service import OutboundService
 from fastapi import APIRouter, Depends, Path, Response, status
+from models.configuration import ManagedOutboundConfig
+from services.outbound import OutboundService
 
 OutboundId = Annotated[
     str,

@@ -2,8 +2,8 @@
 
 import hmac
 
+from config import settings
 from fastapi import Header, HTTPException, status
-from utils.settings import settings
 
 _DEFAULT_API_SECRET = "change-me-in-production"
 

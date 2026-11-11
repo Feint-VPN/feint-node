@@ -2,7 +2,7 @@
 
 Run against disposable resources, never against a production database or client keys.
 
-- `services/node/tests/contract/`: node API/domain/adapters contracts.
+- `services/node/tests/contract/`: node service, persistence, runtime and API contracts.
 - `services/node/tests/integration/`: real HTTP API with a development runtime.
 - `tests/contract/`: CLI, shell, Compose, resource and interconnect contracts.
 - `tests/integration/`: disposable multi-runtime TCP/UDP scenarios.
@@ -15,6 +15,9 @@ every optional scenario has been executed on every change.
 
 | Scenario | Evidence | Boundaries |
 | --- | --- | --- |
+| `architecture_contract.py` | File-backed operations through public exports, no import-time settings/connections, repeat application lifecycle, isolated remote bundle rendering and legacy overlay error compatibility | No production container or WAN traffic |
+| `traffic_layers_contract.py` | Independent-source resets and restored checkpoints without double counting; corrupt checkpoint behavior | Real temporary files, controlled counter source |
+| `workflow_layers_contract.py` | Subscription ordering/labels/settings persistence and failed reverse apply restoring both files | Real files, injected unavailable Docker boundary |
 | `service_contract.py` | File-backed bulk repair/idempotency/concurrency, failure/cancellation rollback, five URI formats, pure Xray transformation, settings and real loopback gRPC serialization/persistence | Runtime reload is a no-op or explicitly injected failure; no VPN-core connection |
 | `route_subscription.py` | HTTP route assignment, URI publication, extra-field preservation, idempotent bulk creation, error responses and application lifespan cleanup | Development runtime; no VPN connection |
 | `probe_stability_contract.py` | Real loopback SOCKS/UDP: one persistent association, missing replies and independent HTTPS failure reporting | Synthetic DNS replies; HTTPS is injected, no external VPN |
@@ -24,6 +27,9 @@ every optional scenario has been executed on every change.
 | `runtime.py --image IMAGE` | Published API image with real sing-box and Xray cores; subscription URI import, HTTPS/UDP, user CRUD, bulk/paging, stats persistence, route assignment and failed-mutation rollback | Disposable Docker stacks on Linux; not installer/update/SSH/ACME acceptance |
 
 ```bash
+python services/node/tests/contract/architecture_contract.py
+python services/node/tests/contract/traffic_layers_contract.py
+python services/node/tests/contract/workflow_layers_contract.py
 python services/node/tests/contract/service_contract.py
 python services/node/tests/integration/route_subscription.py
 python tests/integration/interconnect.py

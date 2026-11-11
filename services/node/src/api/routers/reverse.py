@@ -1,13 +1,13 @@
 """Encrypted reverse-transport management."""
 
-from adapters.rathole_runtime import RatholeRuntime
 from api.depends import verify_api_secret
 from api.depends.reverse import get_reverse_runtime
 from api.schemas.reverse import ReverseKeyResponse, ReverseStateResponse
-from domain.errors import ReverseTunnelError
-from domain.models import ReverseTunnelConfig
+from exceptions import ReverseTunnelError
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from utils.logging_config import get_logger
+from log import get_logger
+from models.configuration import ReverseTunnelConfig
+from services.reverse import ReverseService
 
 logger = get_logger(__name__)
 
@@ -20,7 +20,7 @@ router = APIRouter(
 
 @router.get("", response_model=ReverseStateResponse)
 async def get_reverse(
-    runtime: RatholeRuntime = Depends(get_reverse_runtime),
+    runtime: ReverseService = Depends(get_reverse_runtime),
 ) -> ReverseStateResponse:
     try:
         state = await runtime.get_state()
@@ -32,7 +32,7 @@ async def get_reverse(
 
 @router.get("/key", response_model=ReverseKeyResponse)
 async def get_reverse_key(
-    runtime: RatholeRuntime = Depends(get_reverse_runtime),
+    runtime: ReverseService = Depends(get_reverse_runtime),
 ) -> ReverseKeyResponse:
     if not runtime.public_key:
         raise HTTPException(
@@ -45,7 +45,7 @@ async def get_reverse_key(
 @router.put("", status_code=status.HTTP_204_NO_CONTENT)
 async def set_reverse(
     body: ReverseTunnelConfig,
-    runtime: RatholeRuntime = Depends(get_reverse_runtime),
+    runtime: ReverseService = Depends(get_reverse_runtime),
 ) -> Response:
     try:
         await runtime.configure(body)
@@ -60,7 +60,7 @@ async def set_reverse(
 
 @router.delete("", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_reverse(
-    runtime: RatholeRuntime = Depends(get_reverse_runtime),
+    runtime: ReverseService = Depends(get_reverse_runtime),
 ) -> Response:
     try:
         await runtime.disable()

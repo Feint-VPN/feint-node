@@ -41,12 +41,16 @@ Authenticated API request
    api/routers · schemas
           │
           ▼
-      domain service
- users · protocol mapping · rollback
+      application services
+ users · subscriptions · counters · rollback
           │
           ▼
-        adapters
-sing-box file · Docker · traffic · URLs
+         contracts
+ store/runtime boundaries · internal models
+          │
+          ▼
+      store · runtime
+ atomic files · Docker/core control · gRPC
           │
           ▼
  sing-box or Xray + rathole
@@ -71,7 +75,7 @@ Creating or deleting a user follows one transaction-like flow:
 2. create a local backup;
 3. update every supported inbound;
 4. write the new configuration atomically;
-5. restart sing-box;
+5. apply the change through the configured runtime's hot/cold policy;
 6. restore the backup if saving or restart fails.
 
 ## 🪐 Protocols
@@ -675,7 +679,7 @@ Additional operational references:
 feint-node/
 ├── services/
 │   ├── node/
-│   │   ├── src/              # Existing API/domain/adapters/utils architecture
+│   │   ├── src/              # Application, services, contracts, models, store, runtime, API
 │   │   ├── tests/            # API contracts and HTTP integration
 │   │   ├── templates/        # Canonical runtime templates and examples
 │   │   ├── Dockerfile
@@ -701,9 +705,12 @@ feint-node/
 └── update.sh                 # Compatibility entry point
 ```
 
-The internal application architecture is unchanged. `ops/` has been split by
-responsibility between deployment units and diagnostic implementations. See
+The node keeps Python packages directly under `services/node/src`, without an
+extra `feint_node` wrapper. `ops/` has been split by responsibility between
+deployment units and diagnostic implementations. See
 [layout and compatibility](docs/repository-layout.md) and [operator commands](scripts/README.md).
+The [internal architecture](docs/node-internal-architecture.md) defines layer
+ownership, explicit package exports and compatibility boundaries.
 
 ## 🌑 Current boundaries
 
@@ -729,17 +736,17 @@ uv run --project services/node ruff check --config services/node/pyproject.toml 
 uv run --project services/node basedpyright --project services/node
 ```
 
-`utils/settings.py` is the process configuration boundary (`BaseSettings`):
-adapters receive values rather than parsing the environment again. The Python
+`config.py` is the process configuration boundary (`BaseSettings`):
+services and runtime receive values rather than parsing the environment again. The Python
 configuration accepts `DEV_MODE=true`, `1` and `yes`; use `true` with the existing
 Docker shell entrypoint, whose TLS startup behavior is unchanged.
 Subscription template edits are persisted separately by
-`adapters/subscription_settings.py` and take effect immediately.
+`store/settings.py`, through `services/subscription.py`, and take effect immediately.
 
-`api/services.py` creates application-scoped dependencies during lifespan and shares
+`application.py` creates application-scoped dependencies during lifespan and shares
 one configuration mutation lock between users and outbounds. Docker connections remain
 lazy so a missing daemon does not prevent the diagnostic API from starting.
-`api/errors.py` translates domain failures while keeping runtime details out of responses.
+`api/errors.py` translates application failures while keeping runtime details out of responses.
 `build_xray_config()` is a pure transformation; its file/CLI wrapper accepts explicit
 options from process configuration. Neither this separation nor the user-service
 typing changes the HTTP routes, credential format or rollback sequence.
@@ -753,6 +760,9 @@ clean installation/update are separate gates; none implies the others passed.
 The traffic tracker reuses one gRPC channel per stats endpoint for its lifecycle,
 retaining the five-second poll interval, retry behavior and persisted byte totals.
 Shutdown closes the channels; transient RPC failures do not discard traffic totals.
+`runtime/v2ray.py` owns these channels; `services/traffic.py` accumulates the
+counters, and `store/traffic.py` writes checkpoints atomically. Package imports
+do not load startup settings, open these clients or launch background tasks.
 Atomic traffic snapshots include source checkpoints so restarting only the API
 does not count the still-running core's bytes twice. Disk writes run outside the
 API event loop; shutdown waits for the writer before saving its final snapshot.

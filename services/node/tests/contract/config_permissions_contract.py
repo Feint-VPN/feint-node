@@ -11,8 +11,8 @@ sys.path.insert(
     0, str(Path(__file__).resolve().parents[4] / "services" / "node" / "src")
 )
 
-from adapters.singbox_file_store import SingBoxFileStore
-from domain.models import SingBoxConfig
+from models.configuration import SingBoxConfig
+from store.configuration import SingBoxFileStore
 
 
 @unittest.skipIf(os.name == "nt", "POSIX file permission contract")

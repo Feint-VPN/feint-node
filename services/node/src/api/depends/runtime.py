@@ -1,8 +1,8 @@
 """Container-runtime dependency."""
 
-from domain.ports import IContainerRuntime
+from contracts import ContainerRuntime
 from fastapi import Request
 
 
-def get_container_runtime(request: Request) -> IContainerRuntime:
+def get_container_runtime(request: Request) -> ContainerRuntime:
     return request.app.state.services.runtime

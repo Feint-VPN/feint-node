@@ -16,11 +16,11 @@ import tempfile
 from pathlib import Path
 
 import grpc
-from adapters.docker_runtime import XrayDockerRuntime
-from adapters.xray_socks import socks_outbound
 from docker.errors import DockerException
-from domain.errors import SingBoxReloadError
-from domain.models import SingBoxConfig
+from exceptions import SingBoxReloadError
+from models.configuration import SingBoxConfig
+from runtime.docker import XrayDockerRuntime
+from runtime.xray.socks import socks_outbound
 
 
 def replace_route(canonical: dict, runtime: dict, tag: str, outbound: dict):

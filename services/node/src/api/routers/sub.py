@@ -1,82 +1,37 @@
-"""Subscription link endpoint — Hiddify-compatible (base64-encoded URIs).
+"""HTTP presentation of the optional, public node subscription."""
 
-Public endpoint (no auth required) — enable with SUBSCRIPTION_ENABLED=true.
-
-URI fragment format is configurable via SUB_URI_TEMPLATE in .env.local
-or via the authenticated /sub/settings API.
-Default: 🌌 Feint | {Protocol}
-Placeholders: {protocol} (lowercase), {Protocol} (Title Case), {username}
-"""
-
-import base64
-import binascii
-import json
-from urllib.parse import quote
-
-from adapters.subscription_settings import update_template
-from api.depends import get_user_service, verify_api_secret
+from api.depends import verify_api_secret
+from api.depends.subscription import get_subscription_service
 from api.schemas.subscription import (
     SubscriptionSettingsResponse,
     SubscriptionSettingsUpdateRequest,
 )
-from domain.errors import UserNotFoundError
-from domain.user_service import UserService
+from exceptions import (
+    SubscriptionDomainError,
+    SubscriptionNotFoundError,
+    UserNotFoundError,
+)
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import PlainTextResponse
-from utils.logging_config import get_logger
-from utils.settings import settings
-
-logger = get_logger(__name__)
-
-# Display names shown in Hiddify for each protocol
-_PROTO_DISPLAY: dict[str, str] = {
-    "vless": "VLESS",
-    "vmess": "VMess",
-    "trojan": "Trojan",
-    "hysteria2": "Hysteria2",
-    "tuic": "TUIC",
-    "shadowsocks": "Shadowsocks",
-}
-
-
-def _set_label(url: str, label: str) -> str:
-    """VMess keeps its label inside JSON; other protocols use URI fragments."""
-    prefix = "vmess://"
-    if not url.startswith(prefix):
-        return f"{url.split('#', 1)[0]}#{quote(label, safe='')}"
-    raw = url[len(prefix) :]
-    # base64url → JSON → patch "ps" → base64url
-    padded = raw + "=" * (-len(raw) % 4)
-    try:
-        cfg = json.loads(base64.urlsafe_b64decode(padded))
-    except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError):
-        return url
-    cfg["ps"] = label
-    encoded = base64.urlsafe_b64encode(
-        json.dumps(cfg, separators=(",", ":")).encode()
-    ).decode()
-    return f"{prefix}{encoded}"
-
-
-# Canonical order for the subscription payload
-_PROTO_ORDER = ["vless", "vmess", "trojan", "hysteria2", "tuic", "shadowsocks"]
+from services.subscription import SubscriptionService
 
 router = APIRouter(prefix="/sub", tags=["subscription"])
 
 
-def _require_enabled() -> None:
-    if not settings.SUBSCRIPTION_ENABLED:
+def _require_enabled(
+    service: SubscriptionService = Depends(get_subscription_service),
+) -> None:
+    if not service.enabled:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Subscription endpoint is disabled on this node",
+            status.HTTP_404_NOT_FOUND, "Subscription endpoint is disabled on this node"
         )
 
 
-def _build_settings_response() -> SubscriptionSettingsResponse:
+def _settings(service: SubscriptionService) -> SubscriptionSettingsResponse:
     return SubscriptionSettingsResponse(
-        subscription_enabled=settings.SUBSCRIPTION_ENABLED,
-        server_domain=settings.SERVER_DOMAIN,
-        sub_uri_template=settings.SUB_URI_TEMPLATE,
+        subscription_enabled=service.enabled,
+        server_domain=service.server_domain,
+        sub_uri_template=service.template,
     )
 
 
@@ -86,8 +41,10 @@ def _build_settings_response() -> SubscriptionSettingsResponse:
     dependencies=[Depends(verify_api_secret)],
     summary="Read subscription settings",
 )
-async def get_subscription_settings() -> SubscriptionSettingsResponse:
-    return _build_settings_response()
+async def get_subscription_settings(
+    service: SubscriptionService = Depends(get_subscription_service),
+) -> SubscriptionSettingsResponse:
+    return _settings(service)
 
 
 @router.put(
@@ -98,16 +55,13 @@ async def get_subscription_settings() -> SubscriptionSettingsResponse:
 )
 async def update_subscription_settings(
     body: SubscriptionSettingsUpdateRequest,
+    service: SubscriptionService = Depends(get_subscription_service),
 ) -> SubscriptionSettingsResponse:
     try:
-        update_template(settings, body.sub_uri_template)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
-        ) from e
-
-    logger.info("Subscription URI template updated")
-    return _build_settings_response()
+        service.update_template(body.sub_uri_template)
+    except ValueError as error:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from error
+    return _settings(service)
 
 
 @router.get(
@@ -128,53 +82,21 @@ async def get_subscription(
         default=None,
         description="Optional override for generated share URLs; defaults to SERVER_DOMAIN",
     ),
-    svc: UserService = Depends(get_user_service),
+    service: SubscriptionService = Depends(get_subscription_service),
 ) -> PlainTextResponse:
     try:
-        effective_domain = settings.resolve_server_domain(server_domain)
-    except ValueError as e:
+        encoded, domain = await service.build(username, server_domain)
+    except SubscriptionDomainError as error:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
-        ) from e
-
-    logger.info("Sub request: user='%s' domain='%s'", username, effective_domain)
-
-    try:
-        result = await svc.get_user_configs(username, effective_domain)
-    except UserNotFoundError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
-
-    configs = result.get("configs", {})
-
-    uris = []
-    for proto in _PROTO_ORDER:
-        cfg = configs.get(proto)
-        if cfg and cfg.get("config_url"):
-            uri = cfg["config_url"]
-            display = _PROTO_DISPLAY.get(proto, proto.title())
-            label = settings.SUB_URI_TEMPLATE.format(
-                protocol=proto,
-                Protocol=display,
-                username=username,
-            )
-            uris.append(_set_label(uri, label))
-
-    if not uris:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No protocol configs found for user '{username}'",
-        )
-
-    payload = "\n".join(uris)
-    encoded = base64.b64encode(payload.encode()).decode()
-
-    logger.info("Sub generated: user='%s' protocols=%d", username, len(uris))
-
+            status.HTTP_500_INTERNAL_SERVER_ERROR, str(error)
+        ) from error
+    except (UserNotFoundError, SubscriptionNotFoundError) as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
     return PlainTextResponse(
         content=encoded,
         headers={
             "Content-Disposition": f'attachment; filename="{username}.txt"',
             "Profile-Title": f"Feint VPN - {username}",
-            "Support-URL": f"https://{effective_domain}",
+            "Support-URL": f"https://{domain}",
         },
     )

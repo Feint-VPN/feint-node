@@ -37,9 +37,9 @@ select = ["ASYNC", "B", "BLE", "DTZ", "E4", "E7", "E9", "F", "G", "I", "RUF", "S
 ignore = ["B008"]  # FastAPI dependency declarations intentionally call Depends.
 
 [tool.ruff.lint.per-file-ignores]
-"**/src/adapters/node_telemetry.py" = ["BLE001"]
-"**/src/domain/user_service.py" = ["BLE001"]
-"**/src/adapters/traffic_tracker.py" = ["ASYNC240"]
+"**/src/services/telemetry.py" = ["BLE001"]
+"**/src/services/user.py" = ["BLE001"]
+"**/src/services/traffic.py" = ["ASYNC240"]
 "**/tests/contract/service_contract.py" = ["E402"]  # Executable scenarios bootstrap src.
 "**/tests/contract/hot_reload_contract.py" = ["E402"]
 "**/tests/contract/cutover_contract.py" = ["E402"]

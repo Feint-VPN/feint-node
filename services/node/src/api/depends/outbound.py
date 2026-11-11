@@ -1,7 +1,7 @@
 """Outbound-service dependency."""
 
-from domain.outbound_service import OutboundService
 from fastapi import Request
+from services.outbound import OutboundService
 
 
 def get_outbound_service(request: Request) -> OutboundService:

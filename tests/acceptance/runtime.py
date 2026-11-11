@@ -147,7 +147,7 @@ def exercise(
                             "vpn-node-api",
                             "python",
                             "-c",
-                            "import asyncio,os; from adapters.xray_control import XrayControl; "
+                            "import asyncio,os; from runtime.xray.control import XrayControl; "
                             "asyncio.run(XrayControl(os.environ['V2RAY_API_ADDRESS']).outbound_tags())",
                             timeout=10,
                         )
@@ -248,7 +248,7 @@ def exercise(
                 "python",
                 image,
                 "-m",
-                "adapters.xray_config",
+                "runtime.xray.configuration",
                 "/state/config.json",
                 "/state/xray.json",
                 "127.0.0.1:10085",

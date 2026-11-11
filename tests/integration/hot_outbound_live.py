@@ -7,8 +7,8 @@ import re
 import sys
 from pathlib import Path
 
-from adapters.docker_runtime import XrayDockerRuntime
-from adapters.xray_socks import socks_outbound
+from runtime.docker import XrayDockerRuntime
+from runtime.xray.socks import socks_outbound
 
 
 async def main() -> None:

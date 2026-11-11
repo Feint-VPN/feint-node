@@ -1,6 +1,5 @@
 """User management endpoints."""
 
-from adapters.traffic_tracker import TrafficTracker
 from api.depends import get_traffic_tracker, get_user_service, verify_api_secret
 from api.schemas.user import (
     UserBulkCreateRequest,
@@ -10,9 +9,10 @@ from api.schemas.user import (
     UserListResponse,
     UserResponse,
 )
-from domain.user_service import UserService
 from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import JSONResponse
+from services.traffic import TrafficTracker
+from services.user import UserService
 
 router = APIRouter(tags=["users"], dependencies=[Depends(verify_api_secret)])
 

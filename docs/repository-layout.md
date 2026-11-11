@@ -29,6 +29,14 @@ The application's 52 source files and uv lockfile were moved without content
 changes. Dependency-list consolidation is deliberately not mixed into this
 packaging change: the existing Docker requirements remain unchanged.
 
+The later internal refactor is documented in [node architecture](node-internal-architecture.md).
+Its packages live directly under `services/node/src`: `services`, `contracts`,
+`models`, `exceptions`, `store`, `runtime`, and `api`, alongside `application.py`,
+`config.py`, `log.py`, and the unchanged ASGI entry point `main:app`.
+Current conversion commands select `runtime.xray.configuration`; old installed
+images retain a fallback to `adapters.xray_config`. Legacy overlay destinations
+remain deliberate compatibility code, not an alternative current architecture.
+
 Local verification covers static checks, service/CLI contracts, Compose path
 resolution, Bash shims, disposable TCP/UDP/auth integrations and the built API
 image's development-runtime HTTP scenario. Clean-host installation, ACME,

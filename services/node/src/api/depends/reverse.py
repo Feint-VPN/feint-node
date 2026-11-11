@@ -1,8 +1,8 @@
 """Reverse-transport dependency."""
 
-from adapters.rathole_runtime import RatholeRuntime
 from fastapi import Request
+from services.reverse import ReverseService
 
 
-def get_reverse_runtime(request: Request) -> RatholeRuntime:
+def get_reverse_runtime(request: Request) -> ReverseService:
     return request.app.state.services.reverse

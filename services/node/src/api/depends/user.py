@@ -1,7 +1,7 @@
 """User-service dependency."""
 
-from domain.user_service import UserService
 from fastapi import Request
+from services.user import UserService
 
 
 def get_user_service(request: Request) -> UserService:

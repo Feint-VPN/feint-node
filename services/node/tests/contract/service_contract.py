@@ -20,23 +20,32 @@ sys.path.insert(
     0, str(Path(__file__).resolve().parents[4] / "services" / "node" / "src")
 )
 
-from adapters.docker_runtime import DockerRuntime, NoopRuntime, XrayDockerRuntime
-from adapters.singbox_file_store import SingBoxFileStore
-from adapters.subscription_settings import update_template
-from adapters.traffic_tracker import (
+from application import Application
+from config import Settings
+from exceptions import ConfigRollbackError, SingBoxReloadError
+from models.configuration import InboundUser, SingBoxConfig
+from runtime.docker import DockerRuntime, NoopRuntime, XrayDockerRuntime
+from runtime.tuic import TuicXrayRuntime, build_tuic_config
+from runtime.v2ray import (
     _QUERY_STATS_REQUEST,
     _QUERY_STATS_RESPONSE,
-    TrafficTracker,
+    V2RayCounterSource,
     fetch_v2ray_user_counters,
 )
-from adapters.tuic_runtime import TuicXrayRuntime, build_tuic_config
-from adapters.url_builder import UrlBuilder
-from adapters.xray_config import build_xray_config, render_xray_config
-from api.services import Services
-from domain.errors import ConfigRollbackError, SingBoxReloadError
-from domain.models import InboundUser, SingBoxConfig
-from domain.user_service import PROTOCOL_TAGS, UserService
-from utils.settings import Settings
+from runtime.xray.configuration import build_xray_config, render_xray_config
+from services.links import UrlBuilder
+from services.subscription import SubscriptionService
+from services.traffic import TrafficTracker
+from services.user import PROTOCOL_TAGS, UserService
+from store.configuration import SingBoxFileStore
+from store.settings import SubscriptionSettingsStore
+from store.traffic import TrafficFileStore
+
+
+def traffic_tracker(address, path, additional_addresses=()):
+    return TrafficTracker(
+        V2RayCounterSource(address, additional_addresses), TrafficFileStore(path)
+    )
 
 
 def configuration() -> SingBoxConfig:
@@ -245,7 +254,7 @@ class ServiceContract(unittest.IsolatedAsyncioTestCase):
         from fastapi import FastAPI
 
         await self.service.create_user("alice")
-        tracker = TrafficTracker("unused:1", str(self.root / "traffic.json"))
+        tracker = traffic_tracker("unused:1", str(self.root / "traffic.json"))
         tracker._totals = {
             "alice": {"upload": 12, "download": 34},
             "other": {"upload": 56, "download": 78},
@@ -421,7 +430,7 @@ class ServiceContract(unittest.IsolatedAsyncioTestCase):
                 clear=True,
             ):
                 settings = Settings()
-            services = Services(settings)
+            services = Application(settings)
             self.assertIsInstance(services.runtime, NoopRuntime)
             self.assertIs(
                 services.user._mutation_lock, services.outbound._mutation_lock
@@ -436,7 +445,7 @@ class ServiceContract(unittest.IsolatedAsyncioTestCase):
             "docker.from_env",
             side_effect=AssertionError("Construction must not connect to Docker"),
         ):
-            services = Services(settings)
+            services = Application(settings)
             await services.close()
         with self.assertRaises(ValueError):
             Settings(HYSTERIA2_PUBLIC_PORT=65536)
@@ -505,34 +514,30 @@ class ServiceContract(unittest.IsolatedAsyncioTestCase):
         path.write_text(
             "API_SECRET=unchanged\nSUB_URI_TEMPLATE=old\n", encoding="utf-8"
         )
-        settings = Settings(ENV_FILE_PATH=path)
-        update_template(settings, "Test | {Protocol}")
-        self.assertEqual(settings.SUB_URI_TEMPLATE, "Test | {Protocol}")
+        service = SubscriptionService(
+            self.service,
+            SubscriptionSettingsStore(path),
+            enabled=True,
+            server_domain="node.test",
+            template="old",
+        )
+        service.update_template("Test | {Protocol}")
+        self.assertEqual(service.template, "Test | {Protocol}")
         self.assertEqual(
             path.read_text(),
             "API_SECRET=unchanged\nSUB_URI_TEMPLATE=Test | {Protocol}\n",
         )
         for template in ("{unknown}", "broken{", "two\nlines"):
             with self.assertRaises(ValueError):
-                update_template(settings, template)
-        self.assertEqual(settings.SUB_URI_TEMPLATE, "Test | {Protocol}")
+                service.update_template(template)
+        self.assertEqual(service.template, "Test | {Protocol}")
 
     def test_tuic_overlay_runtime_imports_without_preinstalled_control_modules(self):
         repository = Path(__file__).resolve().parents[4]
         source = repository / "services/node/src"
         work = self.root / "overlay"
         installed = self.root / "installed"
-        (installed / "adapters").mkdir(parents=True)
-        shutil.copyfile(
-            source / "adapters/singbox_file_store.py",
-            installed / "adapters/singbox_file_store.py",
-        )
-        for package in ("domain", "utils"):
-            shutil.copytree(
-                source / package,
-                installed / package,
-                ignore=shutil.ignore_patterns("__pycache__"),
-            )
+        installed.mkdir()
         legacy_users = """PROTOCOL_TAGS = {
     "hysteria2": "hysteria2-in",
 }
@@ -559,10 +564,17 @@ class UserService:
                 return json.dumps([{"RepoDigests": []}])
             self.assertEqual(args[:4], ("docker", "exec", "vpn-node-api", "cat"))
             relative = args[4].removeprefix("/app/src/")
+            mapping = {
+                "domain/models.py": "models/configuration.py",
+                "adapters/url_builder.py": "services/links.py",
+                "adapters/node_telemetry.py": "services/telemetry.py",
+            }
             return (
                 legacy_users
                 if relative == "domain/user_service.py"
-                else (source / relative).read_text(encoding="utf-8")
+                else (source / mapping.get(relative, relative)).read_text(
+                    encoding="utf-8"
+                )
             )
 
         real_run = subprocess.run
@@ -579,8 +591,11 @@ class UserService:
                     "import sys; sys.path.insert(0, sys.argv[1]); "
                     "from adapters.tuic_runtime import TuicXrayRuntime; "
                     "from adapters.traffic_tracker import TrafficTracker; "
-                    "from adapters.xray_config import build_xray_config; "
-                    "assert issubclass(TuicXrayRuntime, object)",
+                    "from runtime.xray.configuration import build_xray_config; "
+                    "from adapters.docker_runtime import XrayDockerRuntime; "
+                    "assert issubclass(TuicXrayRuntime, XrayDockerRuntime); "
+                    "t=TrafficTracker('127.0.0.1:1', '/tmp/unused-test-traffic'); "
+                    "assert t._source.addresses == ('127.0.0.1:1',)",
                     str(installed),
                 ],
                 capture_output=True,
@@ -607,6 +622,8 @@ class UserService:
             patch("subprocess.check_output", side_effect=installed_command),
             patch("subprocess.run", side_effect=build_overlay),
         ):
+            sys.path.insert(0, str(repository / "scripts/lib/runtime"))
+            self.addCleanup(sys.path.remove, str(repository / "scripts/lib/runtime"))
             runpy.run_path(
                 str(repository / "scripts/lib/runtime/tuic_overlay.py"),
                 run_name="__main__",
@@ -657,30 +674,30 @@ class UserService:
                 {"alice": {"upload": 12, "download": 34}},
             )
             path = str(self.root / "traffic.json")
-            tracker = TrafficTracker(address, path)
+            tracker = traffic_tracker(address, path)
             peers.clear()
             await tracker.start()
-            channels = dict(tracker._channels)
+            channels = dict(tracker._source.channels)
             try:
                 await tracker._poll_once()
                 await tracker._poll_once()
                 await tracker.start()
-                self.assertEqual(tracker._channels, channels)
+                self.assertEqual(tracker._source.channels, channels)
                 fail_next = True
                 with self.assertRaises(grpc.aio.AioRpcError):
-                    await tracker._fetch_user_counters()
+                    await tracker._source.fetch_primary()
                 await tracker._poll_once()
                 self.assertEqual(len(peers), 1, "Every poll opened another transport")
             finally:
                 await tracker.stop()
-            self.assertFalse(tracker._channels)
+            self.assertFalse(tracker._source.channels)
             self.assertTrue(
                 all(
                     channel.get_state() == grpc.ChannelConnectivity.SHUTDOWN
                     for channel in channels.values()
                 )
             )
-            restored = TrafficTracker(address, path)
+            restored = traffic_tracker(address, path)
             await restored._load_state()
             result = await restored.get_user("alice")
             self.assertEqual((result["upload"], result["download"]), (12, 34))
@@ -691,13 +708,13 @@ class UserService:
             await server.stop(0)
 
     async def test_multi_runtime_counters_handle_independent_restart(self) -> None:
-        tracker = TrafficTracker("xray:1", str(self.root / "multi.json"), ("tuic:2",))
+        tracker = traffic_tracker("xray:1", str(self.root / "multi.json"), ("tuic:2",))
         primary = {"alice": {"upload": 100, "download": 200}}
         companion = {"alice": {"upload": 30, "download": 40}}
         with (
-            patch.object(tracker, "_fetch_user_counters", return_value=primary),
+            patch.object(tracker._source, "fetch_primary", return_value=primary),
             patch(
-                "adapters.traffic_tracker.fetch_v2ray_user_counters",
+                "runtime.v2ray.fetch_v2ray_user_counters",
                 return_value=companion,
             ),
         ):
@@ -711,11 +728,11 @@ class UserService:
         self.assertFalse(tracker._live_last)
 
     async def test_traffic_persistence_does_not_block_reads_or_lose_new_changes(self):
-        tracker = TrafficTracker("unused:1", str(self.root / "traffic.json"))
+        tracker = traffic_tracker("unused:1", str(self.root / "traffic.json"))
         tracker._totals = {"alice": {"upload": 10, "download": 20}}
         tracker._dirty = True
         writing, release = threading.Event(), threading.Event()
-        original = tracker._write_state
+        original = tracker._store.save
 
         def slow_write(snapshot):
             writing.set()
@@ -723,7 +740,7 @@ class UserService:
                 raise TimeoutError("Event loop could not release the writer")
             original(snapshot)
 
-        with patch.object(tracker, "_write_state", side_effect=slow_write):
+        with patch.object(tracker._store, "save", side_effect=slow_write):
             flush = asyncio.create_task(tracker._flush_state())
             try:
                 self.assertTrue(await asyncio.to_thread(writing.wait, 2))
@@ -737,35 +754,33 @@ class UserService:
         self.assertTrue(tracker._dirty, "A change during the write was lost")
         await tracker._flush_state(force=True)
         self.assertEqual(
-            json.loads(tracker._state_path.read_text()), {"users": {}, "counters": {}}
+            json.loads(tracker._store.path.read_text()), {"users": {}, "counters": {}}
         )
         self.assertFalse(list(self.root.glob(".traffic_*.tmp")))
 
     async def test_failed_traffic_write_retries_without_waiting_for_persist_interval(
         self,
     ):
-        tracker = TrafficTracker("unused:1", str(self.root / "retry.json"))
+        tracker = traffic_tracker("unused:1", str(self.root / "retry.json"))
         tracker._totals = {"alice": {"upload": 10, "download": 20}}
         tracker._dirty = True
-        with patch(
-            "adapters.traffic_tracker.os.replace", side_effect=OSError("disk failure")
-        ):
+        with patch("store.traffic.os.replace", side_effect=OSError("disk failure")):
             await tracker._flush_state()
         self.assertTrue(tracker._dirty)
         self.assertEqual(tracker._last_flush, 0)
-        self.assertFalse(tracker._state_path.exists())
+        self.assertFalse(tracker._store.path.exists())
         self.assertFalse(list(self.root.glob(".traffic_*.tmp")))
         await tracker._flush_state()
         self.assertEqual(
-            json.loads(tracker._state_path.read_text())["users"], tracker._totals
+            json.loads(tracker._store.path.read_text())["users"], tracker._totals
         )
         self.assertFalse(tracker._dirty)
 
     async def test_cancelled_flush_waits_for_writer_before_final_snapshot(self):
-        tracker = TrafficTracker("unused:1", str(self.root / "cancel.json"))
+        tracker = traffic_tracker("unused:1", str(self.root / "cancel.json"))
         tracker._totals = {"alice": {"upload": 10, "download": 20}}
         writing, release = threading.Event(), threading.Event()
-        original = tracker._write_state
+        original = tracker._store.save
 
         def slow_write(snapshot):
             writing.set()
@@ -773,7 +788,7 @@ class UserService:
                 raise TimeoutError("Writer not released")
             original(snapshot)
 
-        with patch.object(tracker, "_write_state", side_effect=slow_write):
+        with patch.object(tracker._store, "save", side_effect=slow_write):
             flush = asyncio.create_task(tracker._flush_state(force=True))
             try:
                 self.assertTrue(await asyncio.to_thread(writing.wait, 2))
@@ -789,7 +804,7 @@ class UserService:
                     await flush
         await tracker._flush_state(force=True)
         self.assertEqual(
-            json.loads(tracker._state_path.read_text()), {"users": {}, "counters": {}}
+            json.loads(tracker._store.path.read_text()), {"users": {}, "counters": {}}
         )
 
     async def test_legacy_traffic_baseline_and_checkpoint_survive_api_restart(self):
@@ -797,18 +812,18 @@ class UserService:
         path.write_text(
             json.dumps({"users": {"alice": {"upload": 10, "download": 20}}})
         )
-        tracker = TrafficTracker("xray:1", str(path))
+        tracker = traffic_tracker("xray:1", str(path))
         await tracker._load_state()
         live = {"alice": {"upload": 100, "download": 200}}
-        with patch.object(tracker, "_fetch_user_counters", return_value=live):
+        with patch.object(tracker._source, "fetch_primary", return_value=live):
             await tracker._poll_once()
             await tracker._flush_state(force=True)
             result = await tracker.get_user("alice")
             self.assertEqual((result["upload"], result["download"]), (10, 20))
-        restarted = TrafficTracker("xray:1", str(path))
+        restarted = traffic_tracker("xray:1", str(path))
         await restarted._load_state()
         live["alice"] = {"upload": 103, "download": 205}
-        with patch.object(restarted, "_fetch_user_counters", return_value=live):
+        with patch.object(restarted._source, "fetch_primary", return_value=live):
             await restarted._poll_once()
             await restarted._poll_once()
             result = await restarted.get_user("alice")

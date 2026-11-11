@@ -13,18 +13,18 @@ import grpc
 sys.path.insert(
     0, str(Path(__file__).resolve().parents[4] / "services" / "node" / "src")
 )
-from adapters.docker_runtime import XrayDockerRuntime
-from adapters.singbox_file_store import SingBoxFileStore
-from adapters.url_builder import UrlBuilder
-from adapters.xray_config import render_xray_config
-from adapters.xray_control import COMMAND, MESSAGES
-from adapters.xray_socks import socks_outbound
 from docker.errors import DockerException
-from domain.errors import ConfigRollbackError, SingBoxReloadError
-from domain.models import SocksOutboundConfig
-from domain.outbound_service import OutboundService
-from domain.user_service import UserService
+from exceptions import ConfigRollbackError, SingBoxReloadError
+from models.configuration import SocksOutboundConfig
+from runtime.docker import XrayDockerRuntime
+from runtime.xray.configuration import render_xray_config
+from runtime.xray.control import COMMAND, MESSAGES
+from runtime.xray.socks import socks_outbound
 from service_contract import configuration
+from services.links import UrlBuilder
+from services.outbound import OutboundService
+from services.user import UserService
+from store.configuration import SingBoxFileStore
 
 
 class HotReloadContract(unittest.IsolatedAsyncioTestCase):

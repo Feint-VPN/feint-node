@@ -11,8 +11,8 @@ sys.path[:0] = [
     str(ROOT / "services/node/tests/contract"),
     str(ROOT / "scripts/lib/interconnect"),
 ]
-from adapters.xray_socks import socks_outbound
 from cutover_interconnect import replace_route, retained_handler
+from runtime.xray.socks import socks_outbound
 from service_contract import configuration
 
 

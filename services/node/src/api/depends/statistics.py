@@ -1,7 +1,7 @@
 """Traffic-statistics dependency."""
 
-from adapters.traffic_tracker import TrafficTracker
 from fastapi import Request
+from services.traffic import TrafficTracker
 
 
 def get_traffic_tracker(request: Request) -> TrafficTracker:

@@ -1,6 +1,6 @@
 """Translate domain failures without exposing runtime/configuration details."""
 
-from domain.errors import (
+from exceptions import (
     ConfigRollbackError,
     InboundNotFoundError,
     OutboundInUseError,
@@ -12,7 +12,7 @@ from domain.errors import (
 )
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from utils.logging_config import get_logger
+from log import get_logger
 
 logger = get_logger(__name__)
 ERROR_RESPONSES = {

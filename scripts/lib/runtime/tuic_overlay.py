@@ -11,6 +11,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from overlay_sources import stage_runtime_bridges, stage_support
+
 
 def command(*args: str) -> str:
     return subprocess.check_output(args, text=True)
@@ -42,17 +44,24 @@ def main() -> None:
     image = json.loads(command("docker", "image", "inspect", inspect["Image"]))[0]
     base = next(iter(image.get("RepoDigests") or []), inspect["Image"])
     env = dict(item.split("=", 1) for item in inspect["Config"]["Env"])
+    layered = stage_support(args.source, args.work, services=True)
     for relative in (
-        "adapters/tuic_runtime.py",
-        "adapters/docker_runtime.py",
-        "adapters/xray_config.py",
-        "adapters/xray_socks.py",
-        "adapters/xray_control.py",
-        "adapters/traffic_tracker.py",
+        ()
+        if layered
+        else (
+            "adapters/tuic_runtime.py",
+            "adapters/docker_runtime.py",
+            "adapters/xray_config.py",
+            "adapters/xray_socks.py",
+            "adapters/xray_control.py",
+            "adapters/traffic_tracker.py",
+        )
     ):
         target = args.work / "src" / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(args.source / relative, target)
+    if layered:
+        stage_runtime_bridges(args.work, traffic=True)
 
     def read(relative: str) -> str:
         return command("docker", "exec", args.container, "cat", "/app/src/" + relative)
@@ -107,7 +116,9 @@ def main() -> None:
             )
     save("domain/models.py", source)
 
-    local = (args.source / "adapters/url_builder.py").read_text(encoding="utf-8")
+    local = (
+        args.source / ("services/links.py" if layered else "adapters/url_builder.py")
+    ).read_text(encoding="utf-8")
     method = next(
         n
         for n in ast.walk(ast.parse(local))

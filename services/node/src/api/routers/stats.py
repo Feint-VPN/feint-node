@@ -1,10 +1,10 @@
 """Statistics endpoints — backed by the in-process TrafficTracker."""
 
-from adapters.traffic_tracker import TrafficTracker
 from api.depends import get_traffic_tracker, verify_api_secret
 from api.schemas.user import UserStats
 from fastapi import APIRouter, Depends
-from utils.logging_config import get_logger
+from log import get_logger
+from services.traffic import TrafficTracker
 
 logger = get_logger(__name__)
 

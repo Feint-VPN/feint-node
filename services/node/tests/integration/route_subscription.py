@@ -29,9 +29,9 @@ def main() -> None:
     )
 
     import uvicorn
-    from adapters.xray_config import render_xray_config
+    from config import settings
     from main import app
-    from utils.settings import settings
+    from runtime.xray.configuration import render_xray_config
 
     with tempfile.TemporaryDirectory(prefix="feint-route-sub-") as directory:
         path = Path(directory) / "config.json"
