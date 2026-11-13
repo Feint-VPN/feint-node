@@ -344,6 +344,37 @@ class HotReloadContract(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(SingBoxReloadError):
             self.runtime._additions(candidate)
 
+    async def test_many_native_routes_preserve_order_and_reject_unmatched_removal(self):
+        previous = self.runtime._applied_config
+        old = [
+            socks_outbound(
+                f"outbound:route-{i}", {"server": "127.0.0.1", "server_port": 43000 + i}
+            )
+            for i in range(100)
+        ]
+        native = [
+            socks_outbound(
+                item["tag"],
+                {
+                    "server": "100.64.0.2",
+                    "server_port": 44000 + i,
+                    "username": "peer",
+                    "password": "test-native-password",
+                },
+            )
+            for i, item in enumerate(old)
+        ]
+        previous["outbounds"].extend(old)
+        self.runtime._resident_outbounds.update({item["tag"]: item for item in old})
+        candidate = json.loads(json.dumps(previous))
+        candidate["outbounds"][-len(old) :] = native
+        self.assertEqual(self.runtime._hot_outbounds(candidate), native)
+        self.assertTrue(
+            all(item["tag"] not in self.runtime._resident_outbounds for item in native)
+        )
+        candidate["outbounds"].pop()
+        self.assertIsNone(self.runtime._hot_outbounds(candidate))
+
     async def test_partial_outbound_add_failure_removes_only_new_handler(self):
         previous = self.runtime._applied_config
         candidate = json.loads(json.dumps(previous))

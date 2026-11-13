@@ -81,15 +81,11 @@ class OutboundService:
             await self._store.backup(),
         )
 
-    @serialized_mutation
     async def add_user(self, outbound_id: str, user_id: str) -> None:
-        await self._add_users(outbound_id, {user_id})
+        await self.add_users(outbound_id, {user_id})
 
     @serialized_mutation
     async def add_users(self, outbound_id: str, user_ids: set[str]) -> None:
-        await self._add_users(outbound_id, user_ids)
-
-    async def _add_users(self, outbound_id: str, user_ids: set[str]) -> None:
         config = await self._store.load()
         tag = f"{OUTBOUND_PREFIX}{outbound_id}"
         if not any(outbound.tag == tag for outbound in config.outbounds):
@@ -122,15 +118,11 @@ class OutboundService:
             self._store, self._runtime, config, await self._store.backup()
         )
 
-    @serialized_mutation
     async def remove_user(self, outbound_id: str, user_id: str) -> None:
-        await self._remove_users(outbound_id, {user_id})
+        await self.remove_users(outbound_id, {user_id})
 
     @serialized_mutation
     async def remove_users(self, outbound_id: str, user_ids: set[str]) -> None:
-        await self._remove_users(outbound_id, user_ids)
-
-    async def _remove_users(self, outbound_id: str, user_ids: set[str]) -> None:
         config = await self._store.load()
         tag = f"{OUTBOUND_PREFIX}{outbound_id}"
         if not any(outbound.tag == tag for outbound in config.outbounds):
@@ -152,23 +144,16 @@ class OutboundService:
         tag: str,
         value: ManagedOutboundConfig,
     ) -> None:
-        if isinstance(value, Hysteria2OutboundConfig):
-            data = value.model_dump(
-                exclude={"auth_users", "password", "obfs"},
-                exclude_none=True,
-            )
+        data = value.model_dump(
+            exclude={"auth_users", "password", "obfs"}, exclude_none=True
+        )
+        if value.password is not None:
             data["password"] = value.password.get_secret_value()
-            if value.obfs:
-                data["obfs"] = {
-                    "type": value.obfs.type,
-                    "password": value.obfs.password.get_secret_value(),
-                }
-        else:
-            data = value.model_dump(
-                exclude={"auth_users", "password"}, exclude_none=True
-            )
-            if value.password is not None:
-                data["password"] = value.password.get_secret_value()
+        if isinstance(value, Hysteria2OutboundConfig) and value.obfs:
+            data["obfs"] = {
+                "type": value.obfs.type,
+                "password": value.obfs.password.get_secret_value(),
+            }
         outbound = Outbound(tag=tag, **data)
         for index, current in enumerate(config.outbounds):
             if current.tag == tag:

@@ -23,7 +23,12 @@ sys.path.insert(
 from application import Application
 from config import Settings
 from exceptions import ConfigRollbackError, SingBoxReloadError
-from models.configuration import InboundUser, SingBoxConfig
+from models.configuration import (
+    Hysteria2OutboundConfig,
+    InboundUser,
+    SingBoxConfig,
+    SocksOutboundConfig,
+)
 from runtime.docker import DockerRuntime, NoopRuntime, XrayDockerRuntime
 from runtime.tuic import TuicXrayRuntime, build_tuic_config
 from runtime.v2ray import (
@@ -34,6 +39,7 @@ from runtime.v2ray import (
 )
 from runtime.xray.configuration import build_xray_config, render_xray_config
 from services.links import UrlBuilder
+from services.outbound import OutboundService
 from services.subscription import SubscriptionService
 from services.traffic import TrafficTracker
 from services.user import PROTOCOL_TAGS, UserService
@@ -186,6 +192,63 @@ class ServiceContract(unittest.IsolatedAsyncioTestCase):
         await self.store.save(configuration())
         self.builder = UrlBuilder("public-key", "abcd", "node.test")
         self.service = UserService(self.store, NoopRuntime(), self.builder)
+
+    async def test_outbound_credentials_are_saved_without_masks_or_request_fields(self):
+        service = OutboundService(self.store, NoopRuntime())
+        for options in (
+            {"type": "socks", "version": "5"},
+            {"type": "socks", "version": "5", "username": "peer", "password": "p:a/ss"},
+            {
+                "type": "hysteria2",
+                "password": "p:a/ss",
+                "tls": {"enabled": True, "server_name": "exit.test", "insecure": False},
+                "obfs": {"type": "salamander", "password": "obfs-secret"},
+            },
+        ):
+            with self.subTest(
+                protocol=options["type"], authenticated="password" in options
+            ):
+                payload = {"server": "exit.test", "server_port": 443, **options}
+                model = (
+                    Hysteria2OutboundConfig
+                    if options["type"] == "hysteria2"
+                    else SocksOutboundConfig
+                )
+                await service.set("route", model(**payload))
+                saved = json.loads(self.store.config_path.read_text())
+                self.assertEqual(
+                    saved["outbounds"], [{"tag": "outbound:route", **payload}]
+                )
+                self.assertEqual(saved["route"]["rules"], [])
+
+    async def test_single_and_bulk_outbound_mutations_share_one_lock(self):
+        await self.service.create_users(
+            [(name, None, None) for name in ("alice", "bob", "carol")]
+        )
+        service = OutboundService(
+            self.store, NoopRuntime(), self.service._mutation_lock
+        )
+        await service.set(
+            "route", SocksOutboundConfig(server="exit.test", server_port=443)
+        )
+        await asyncio.wait_for(
+            asyncio.gather(
+                service.add_user("route", "alice"),
+                service.add_users("route", {"bob", "carol"}),
+            ),
+            timeout=5,
+        )
+        saved = await self.store.load()
+        self.assertEqual(set(saved.route.rules[0].auth_user), {"alice", "bob", "carol"})
+        await asyncio.wait_for(
+            asyncio.gather(
+                service.remove_user("route", "alice"),
+                service.remove_users("route", {"bob"}),
+            ),
+            timeout=5,
+        )
+        saved = await self.store.load()
+        self.assertEqual(saved.route.rules[0].auth_user, ["carol"])
 
     async def test_bulk_repairs_partial_users_without_rotating_credentials(
         self,

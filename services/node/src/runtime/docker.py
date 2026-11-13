@@ -3,6 +3,7 @@
 import asyncio
 import copy
 import json
+from collections import Counter
 from pathlib import Path
 
 import docker
@@ -132,14 +133,16 @@ class XrayDockerRuntime(DockerRuntime):
                 else None
             )
 
+        candidate_routes = {route_tag(item) for item in after.values()}
         for tag, item in previous.items():
             if tag in after:
                 if item != after[tag]:
                     return None
-            elif not route_tag(item) or not any(
-                route_tag(new) == route_tag(item) for new in after.values()
-            ):
+            elif not route_tag(item) or route_tag(item) not in candidate_routes:
                 return None
+        resident_routes = Counter(
+            route_tag(item) for item in self._resident_outbounds.values()
+        )
         additions = []
         for tag, item in after.items():
             resident = self._resident_outbounds.get(tag)
@@ -151,12 +154,7 @@ class XrayDockerRuntime(DockerRuntime):
             if route is None:
                 return None
             # Keep one old and one new handler per route, not an unbounded history.
-            if (
-                sum(
-                    route_tag(old) == route for old in self._resident_outbounds.values()
-                )
-                >= 2
-            ):
+            if resident_routes[route] >= 2:
                 raise SingBoxReloadError(
                     "Drain retained route handlers before another endpoint change"
                 )

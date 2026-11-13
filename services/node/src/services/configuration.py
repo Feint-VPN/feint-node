@@ -41,10 +41,7 @@ async def commit_config(
     try:
         await store.save(config)
         await runtime.reload()
-    except asyncio.CancelledError:
-        await _rollback(store, runtime, backup)
-        raise
-    except Exception:
+    except (Exception, asyncio.CancelledError):
         await _rollback(store, runtime, backup)
         raise
 
